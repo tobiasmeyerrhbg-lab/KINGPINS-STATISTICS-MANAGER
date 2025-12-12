@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Kingpins Statistics Manager",
+    "slug": "kingpins-stats",
+    "version": "1.0.0",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTabletMode": true
+    },
+    "android": {
+      "package": "com.kingpins.statsmanager"
+    },
+    "plugins": [
+      [
+        "expo-sqlite"
+      ]
+    ]
+  }
+}

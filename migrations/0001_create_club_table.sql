@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS Club (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  logoUri TEXT,
+  maxMultiplier INTEGER NOT NULL DEFAULT 10,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
