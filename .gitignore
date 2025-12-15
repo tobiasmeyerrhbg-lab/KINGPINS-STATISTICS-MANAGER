@@ -23,3 +23,8 @@ Thumbs.db
 
 # Misc
 .env
+*.apk
+*.aab
+android/
+ios/
+
