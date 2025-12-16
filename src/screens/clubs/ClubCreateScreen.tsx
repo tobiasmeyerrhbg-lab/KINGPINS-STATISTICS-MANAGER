@@ -21,7 +21,8 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { createClub } from '../../services/clubService';
-import * as ImagePicker from 'react-native-image-picker';
+// UPDATED: use shared picker that supports camera or gallery
+import { pickImageWithPrompt } from '../../services/imagePickerService';
 
 export default function ClubCreateScreen() {
   const navigation = useNavigation();
@@ -39,20 +40,10 @@ export default function ClubCreateScreen() {
   const timezoneOptions = ['CET', 'UTC', 'EST', 'PST', 'Asia/Kolkata'];
   const timeFormatOptions = ['HH:mm', 'h:mm a', 'HH:mm:ss'];
 
-  const handlePickLogo = () => {
-    ImagePicker.launchImageLibrary(
-      {
-        mediaType: 'photo',
-        maxWidth: 512,
-        maxHeight: 512,
-        quality: 0.8,
-      },
-      (response) => {
-        if (response.assets && response.assets.length > 0) {
-          setLogoUri(response.assets[0].uri);
-        }
-      }
-    );
+  const handlePickLogo = async () => {
+    // UPDATED: prompt user to choose camera or library; compressed via shared options
+    const uri = await pickImageWithPrompt('logo');
+    if (uri) setLogoUri(uri);
   };
 
   const handleSave = async () => {

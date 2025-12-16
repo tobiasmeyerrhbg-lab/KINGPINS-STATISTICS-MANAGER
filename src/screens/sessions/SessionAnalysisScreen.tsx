@@ -23,9 +23,11 @@ const SessionAnalysisScreen = ({ route }: Props) => {
   const [clubCurrency, setClubCurrency] = useState<string>('');
   const [clubTimeFormat, setClubTimeFormat] = useState<string>('HH:mm');
   const [clubTimezone, setClubTimezone] = useState<string>('UTC');
+  const [clubMaxMultiplier, setClubMaxMultiplier] = useState<number>(10);
   const [penalties, setPenalties] = useState<any[]>([]);
   const [comparePenaltyIds, setComparePenaltyIds] = useState<string[]>([]);
   const [showCompareOptions, setShowCompareOptions] = useState(false);
+  const [showMultiplierBands, setShowMultiplierBands] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -39,6 +41,7 @@ const SessionAnalysisScreen = ({ route }: Props) => {
       setClubCurrency(club?.currency || '');
       setClubTimeFormat(club?.timeFormat || 'HH:mm');
       setClubTimezone(club?.timezone || 'UTC');
+      setClubMaxMultiplier(club?.maxMultiplier || 10);
       // Load penalties for options modal
       const { getPenaltiesByClub } = await import('../../services/penaltyService');
       const plist = await getPenaltiesByClub(clubId);
@@ -103,17 +106,28 @@ const SessionAnalysisScreen = ({ route }: Props) => {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Full Session Replay</Text>
             <SessionGraphView
-              config={{ sessionId, clubId, mode: 'full-replay', showMultiplierBands: true }}
+              config={{ sessionId, clubId, mode: 'full-replay', showMultiplierBands }}
               result={fullResult}
               members={membersSlim}
               currency={clubCurrency}
               timeFormat={clubTimeFormat}
               timezone={clubTimezone}
-              onRequestFullscreen={() => openFullscreen({ sessionId, clubId, mode: 'full-replay', showMultiplierBands: true }, fullResult)}
-              onExport={() => openFullscreen({ sessionId, clubId, mode: 'full-replay', showMultiplierBands: true }, fullResult)}
+              clubMaxMultiplier={clubMaxMultiplier}
+              onRequestFullscreen={() => openFullscreen({ sessionId, clubId, mode: 'full-replay', showMultiplierBands }, fullResult)}
+              onExport={() => openFullscreen({ sessionId, clubId, mode: 'full-replay', showMultiplierBands }, fullResult)}
             />
           </View>
         )}
+
+        {/* Multiplier Bands Toggle */}
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={[styles.toggle, showMultiplierBands && styles.toggleActive]}
+            onPress={() => setShowMultiplierBands(!showMultiplierBands)}
+          >
+            <Text style={styles.toggleText}>Show Multiplier Bands: {showMultiplierBands ? 'ON' : 'OFF'}</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Compare Graphs (optional, under full) */}
         {compareResults.length > 0 && (
@@ -129,15 +143,16 @@ const SessionAnalysisScreen = ({ route }: Props) => {
               return (
                 <View key={penaltyId} style={{ marginTop: 12 }}>
                   <SessionGraphView
-                    config={{ sessionId, clubId, mode: 'player-comparison-per-penalty', selectedPenaltyId: penaltyId, showMultiplierBands: true }}
+                    config={{ sessionId, clubId, mode: 'player-comparison-per-penalty', selectedPenaltyId: penaltyId, showMultiplierBands }}
                     result={result}
                     members={membersSlim}
                     currency={clubCurrency}
                     penaltyName={penalty?.name}
                     timeFormat={clubTimeFormat}
                     timezone={clubTimezone}
-                    onRequestFullscreen={() => openFullscreen({ sessionId, clubId, mode: 'player-comparison-per-penalty', selectedPenaltyId: penaltyId, showMultiplierBands: true }, result, penalty?.name)}
-                    onExport={() => openFullscreen({ sessionId, clubId, mode: 'player-comparison-per-penalty', selectedPenaltyId: penaltyId, showMultiplierBands: true }, result, penalty?.name)}
+                    clubMaxMultiplier={clubMaxMultiplier}
+                    onRequestFullscreen={() => openFullscreen({ sessionId, clubId, mode: 'player-comparison-per-penalty', selectedPenaltyId: penaltyId, showMultiplierBands }, result, penalty?.name)}
+                    onExport={() => openFullscreen({ sessionId, clubId, mode: 'player-comparison-per-penalty', selectedPenaltyId: penaltyId, showMultiplierBands }, result, penalty?.name)}
                   />
                 </View>
               );
@@ -216,6 +231,9 @@ const styles = StyleSheet.create({
   penaltyItemSelected: { backgroundColor: '#dbeafe' },
   penaltyItemText: { fontSize: 14, fontWeight: '600', color: '#1e293b' },
   penaltyItemMeta: { fontSize: 12, color: '#64748b', marginTop: 4 },
+  toggle: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#e2e8f0', alignItems: 'center' },
+  toggleActive: { backgroundColor: '#3b82f6' },
+  toggleText: { fontSize: 14, fontWeight: '700', color: '#ffffff' },
 });
 
 export default SessionAnalysisScreen;

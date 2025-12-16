@@ -28,12 +28,15 @@ import {
   Image,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
+import { useFocusEffect } from '@react-navigation/native';
 import { Session, getSession, updateMultiplier, updateTotalAmounts } from '../../services/sessionService';
 import { SessionLog, getLogsBySession, createLog } from '../../services/sessionLogService';
 import { addCommit, negativeCommit } from '../../services/commitService';
 import { getPenaltiesByClub, Penalty } from '../../services/penaltyService';
 import { getMembersByClub, Member, createMember } from '../../services/memberService';
+import { getClub, Club } from '../../services/clubService';
 import { SessionEndModals } from '../../components/SessionEndModals';
+import { formatCommitCountFromMap } from '../../utils/commitFormatter';
 import { db } from '../../database/db';
 
 interface Props {
@@ -62,6 +65,7 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
   const { sessionId, clubId, clubName = 'Club', maxMultiplier: maxMultParam = 10 } = route.params;
 
   const [session, setSession] = useState<Session | null>(null);
+  const [club, setClub] = useState<Club | null>(null);
   const [logs, setLogs] = useState<SessionLog[]>([]);
   const [penalties, setPenalties] = useState<Penalty[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -95,6 +99,12 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const isProcessing = useRef(false);
+  // UPDATED (Crash/Resume): track scroll positions for reliable UI restoration
+  const verticalScrollRef = useRef<ScrollView | null>(null);
+  const horizontalScrollRef = useRef<ScrollView | null>(null);
+  const [savedScrollY, setSavedScrollY] = useState(0);
+  const [savedScrollX, setSavedScrollX] = useState(0);
+  const hasRestoredScroll = useRef(false);
 
   /**
    * Load session data and rebuild state from logs
@@ -108,16 +118,18 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
       setCurrentMultiplier(sessionData.multiplier);
       setSliderMultiplier(sessionData.multiplier);
 
-      const [logRows, clubPenalties, clubMembers] = await Promise.all([
+      const [logRows, clubPenalties, clubMembers, clubData] = await Promise.all([
         getLogsBySession(sessionId),
         getPenaltiesByClub(clubId),
         getMembersByClub(clubId),
+        getClub(clubId),
       ]);
       
       setLogs(logRows);
       const activePenalties = clubPenalties.filter(p => p.active);
       setPenalties(activePenalties);
       setMembers(clubMembers);
+      setClub(clubData || null);
 
       const activeMemberIds = sessionData.activePlayers || [];
       const activeMembersList = clubMembers.filter(m => activeMemberIds.includes(m.id));
@@ -129,6 +141,12 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
           memberJoinTimes[log.memberId] = log.timestamp;
         }
       }
+
+      // UPDATED (Crash/Resume): Restore multiplier from the last system=5 log, else session.multiplier
+      const lastMultLog = [...logRows].reverse().find(l => l.system === 5);
+      const restoredMultiplier = lastMultLog?.multiplier ?? sessionData.multiplier ?? 1;
+      setCurrentMultiplier(restoredMultiplier);
+      setSliderMultiplier(restoredMultiplier);
 
       // Rebuild state from logs
       const newCommitCounts: CommitState = {};
@@ -207,9 +225,33 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
     }
   }, [sessionId, clubId]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // UPDATED (Crash/Resume): run loadData and manage timer on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      if (!timerRef.current) {
+        timerRef.current = setInterval(() => setTick(t => t + 1), 1000);
+      }
+      // Restore saved scroll positions once after initial layout
+      if (!hasRestoredScroll.current) {
+        setTimeout(() => {
+          if (verticalScrollRef.current && savedScrollY > 0) {
+            verticalScrollRef.current.scrollTo({ y: savedScrollY, animated: false });
+          }
+          if (horizontalScrollRef.current && savedScrollX > 0) {
+            horizontalScrollRef.current.scrollTo({ x: savedScrollX, animated: false });
+          }
+          hasRestoredScroll.current = true;
+        }, 0);
+      }
+      return () => {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+      };
+    }, [loadData])
+  );
 
   // Timer effect
   useEffect(() => {
@@ -252,12 +294,11 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
   }, [session?.date]);
 
   /**
-   * Format commit display with multiplier grouping: "3 (1×2x; 1×4x)"
+   * Format commit display with multiplier grouping using shared formatter
    */
   const formatCommitDisplay = useCallback(
     (memberId: string, penaltyId: string): string => {
       const total = commitCounts[memberId]?.[penaltyId] || 0;
-      if (total === 0) return '0';
 
       // Group by multiplier from logs
       const byMultiplier: Record<number, number> = {};
@@ -274,20 +315,7 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
         }
       }
 
-      const multKeys = Object.keys(byMultiplier).filter(k => byMultiplier[Number(k)] !== 0);
-      if (multKeys.length === 0) return String(total);
-      if (multKeys.length === 1 && Number(multKeys[0]) === 1) return String(total);
-
-      const parts = multKeys
-        .map(k => {
-          const mult = Number(k);
-          const count = byMultiplier[mult];
-          return mult === 1 ? null : `${count}\u00d7${mult}x`;
-        })
-        .filter(Boolean);
-
-      if (parts.length === 0) return String(total);
-      return `${total} (${parts.join('; ')})`;
+      return formatCommitCountFromMap(total, byMultiplier);
     },
     [commitCounts, logs]
   );
@@ -299,11 +327,14 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
     const amountSelf = penalty.amount || 0;
     const amountOther = penalty.amountOther || 0;
 
+    // UPDATED: Add currency symbol from club if available
+    const currencySymbol = club?.currency || '$';
+
     // active-table: hide amounts when both zero
     if (amountSelf === 0 && amountOther === 0) return '';
 
-    const selfText = amountSelf === 0 ? '' : formatNumber(amountSelf);
-    const otherText = amountOther === 0 ? '' : formatNumber(amountOther);
+    const selfText = amountSelf === 0 ? '' : `${currencySymbol}${formatNumber(amountSelf)}`;
+    const otherText = amountOther === 0 ? '' : `${currencySymbol}${formatNumber(amountOther)}`;
 
     // active-table: new "(Other)" display and zero handling
     if (penalty.affect === 'SELF') return selfText;
@@ -315,7 +346,7 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
       return '';
     }
     return selfText;
-  }, []);
+  }, [club?.currency]);
 
   const availableMembers = useMemo(() => {
     return members.filter(m => !session?.activePlayers.includes(m.id));
@@ -526,36 +557,62 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
   const activeMemberIds = session.activePlayers || [];
   const activeMembers = members.filter(m => activeMemberIds.includes(m.id));
 
-  // Calculate dynamic column widths based on screen width
+  // IMPROVED: Calculate dynamic column widths for better responsiveness
   const screenWidth = Dimensions.get('window').width;
   const containerPadding = 16;
   const availableWidth = screenWidth - containerPadding * 2;
   
-  const memberNameWidth = Math.max(80, availableWidth * 0.2); // 20% of width, min 80
-  const totalColumnWidth = Math.max(60, availableWidth * 0.12); // compact total column
+  // UPDATED: More generous member name width for readability
+  const memberNameWidth = Math.max(90, availableWidth * 0.18); // 18% of width, min 90
+  const totalColumnWidth = Math.max(70, availableWidth * 0.13); // compact total column
   const penaltyContentWidth = availableWidth - memberNameWidth - totalColumnWidth;
   
-  // Distribute penalty columns to fit available width
-  const minPenaltyColumnWidth = 60; // Minimum width for a penalty cell
+  // IMPROVED: Better penalty column width distribution
+  // For few penalties (1-4): use wider columns for better button clickability
+  // For many penalties (5+): enable horizontal scrolling with narrower minimum
   const numPenalties = penalties.length;
+  let minPenaltyColumnWidth: number;
+  
+  if (numPenalties <= 4) {
+    minPenaltyColumnWidth = 140; // Wide enough to contain buttons with spacing
+  } else if (numPenalties <= 8) {
+    minPenaltyColumnWidth = 130; // Balanced for medium penalty count
+  } else {
+    minPenaltyColumnWidth = 120; // Minimum to contain buttons without overlap
+  }
+  
   const calculatedPenaltyWidth = Math.max(
     minPenaltyColumnWidth,
     penaltyContentWidth / Math.max(1, numPenalties)
   );
-  const penaltyColumnWidth = Math.min(calculatedPenaltyWidth, availableWidth * 0.25); // Cap at 25% per column
+  // Cap at 30% for very wide screens with few penalties
+  const penaltyColumnWidth = Math.min(calculatedPenaltyWidth, availableWidth * 0.30);
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Compact Top Bar: Title + Timer + Multiplier (no back button) */}
+      {/* UPDATED: Enhanced Top Bar with Back Button + Title + Timer + Multiplier */}
       <View style={styles.topBar}>
+        {/* ADDED: Back Button - navigates to SessionListScreen */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.navigate('SessionList')}
+        >
+          <Text style={styles.backButtonText}>←</Text>
+        </TouchableOpacity>
+
+        {/* Title - reduced flex to accommodate back button */}
         <View style={styles.topBarLeft}>
           <Text style={styles.sessionTitle} numberOfLines={1}>
             {clubName} Session {formattedDate}
           </Text>
         </View>
+
+        {/* Timer - centered */}
         <View style={styles.topBarCenter}>
           <Text style={styles.timerText}>{elapsedTime}</Text>
         </View>
+
+        {/* UPDATED: Multiplier Button - fixed width to prevent overlap with system info */}
         <TouchableOpacity
           style={styles.multiplierButton}
           onPress={() => setShowMultiplierModal(true)}
@@ -565,17 +622,25 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
       </View>
 
       {/* Grid Table - Takes Maximum Space */}
+      {/* UPDATED (Crash/Resume): capture vertical scroll position for resume */}
       <ScrollView
         style={styles.gridContainer}
         showsVerticalScrollIndicator={false}
         scrollEnabled={true}
+        ref={ref => { verticalScrollRef.current = ref; }}
+        onScroll={({ nativeEvent }) => setSavedScrollY(nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
       >
+        {/* UPDATED (Crash/Resume): capture horizontal scroll position for resume */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           scrollEnabled={penalties.length > 0}
+          ref={ref => { horizontalScrollRef.current = ref; }}
+          onScroll={({ nativeEvent }) => setSavedScrollX(nativeEvent.contentOffset.x)}
+          scrollEventThrottle={16}
         >
-          <View style={[styles.table, { minWidth: '100%' }]}>
+          <View style={[styles.table, { minWidth: memberNameWidth + totalColumnWidth + (penaltyColumnWidth * numPenalties) }]}>
             {/* Header Row (Penalty Names) */}
             <View style={styles.headerRow}>
               <View style={[styles.memberNameCell, { minWidth: memberNameWidth }]}>
@@ -585,16 +650,22 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
                 {penalties.map(penalty => (
                   <View
                     key={penalty.id}
-                    style={[styles.penaltyHeaderCell, { width: penaltyColumnWidth }]}
+                    style={[styles.penaltyHeaderCell, { width: penaltyColumnWidth, minWidth: penaltyColumnWidth }]}
                   >
-                    <Text style={styles.penaltyHeaderText} numberOfLines={2}>
-                      {penalty.name}
-                    </Text>
-                    {formatPenaltyAmount(penalty) !== '' && (
-                      <Text style={styles.penaltyAmountText} numberOfLines={1}>
-                        {formatPenaltyAmount(penalty)}
+                    <View style={styles.penaltyNameContainer}>
+                      <Text style={styles.penaltyHeaderText} numberOfLines={2}>
+                        {penalty.name}
                       </Text>
-                    )}
+                    </View>
+                    <View style={styles.penaltyAmountContainer}>
+                      {formatPenaltyAmount(penalty) !== '' ? (
+                        <Text style={styles.penaltyAmountText} numberOfLines={1}>
+                          {formatPenaltyAmount(penalty)}
+                        </Text>
+                      ) : (
+                        <Text style={styles.penaltyAmountPlaceholder}> </Text>
+                      )}
+                    </View>
                   </View>
                 ))}
               </View>
@@ -624,10 +695,10 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
                     return (
                       <View
                         key={penalty.id}
-                        style={[styles.commitCell, { width: penaltyColumnWidth }]}
+                        style={[styles.commitCell, { width: penaltyColumnWidth, minWidth: penaltyColumnWidth }]}
                       >
                         <TouchableOpacity
-                          style={styles.commitButton}
+                          style={[styles.commitButton, { marginLeft: 2, marginRight: 2 }]}
                           onPress={() => handleCommit(member.id, penalty.id, -1)}
                           disabled={isProcessing.current}
                         >
@@ -635,7 +706,7 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
                         </TouchableOpacity>
                         <Text style={styles.commitCount}>{displayText}</Text>
                         <TouchableOpacity
-                          style={styles.commitButton}
+                          style={[styles.commitButton, { marginLeft: 2, marginRight: 2 }]}
                           onPress={() => handleCommit(member.id, penalty.id, 1)}
                           disabled={isProcessing.current}
                         >
@@ -827,22 +898,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  // UPDATED: Top bar expanded with back button and increased height to prevent system overlay
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
     backgroundColor: '#f9f9f9',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    minHeight: 50,
   },
   topBarLeft: {
     flex: 1,
     justifyContent: 'center',
+    marginHorizontal: 4,
   },
   topBarCenter: {
-    flex: 1,
+    flex: 0.8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -856,14 +930,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#007AFF',
   },
+  // UPDATED: Multiplier button with increased padding and fixed width
   multiplierButton: {
     backgroundColor: '#007AFF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 6,
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: 42,
+    minWidth: 50,
   },
   topBarMinimal: {
     flexDirection: 'row',
@@ -877,13 +952,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
   },
+  // ADDED: Back button styling for navigation to SessionListScreen
   backButton: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginRight: 6,
+    paddingVertical: 8,
+    marginRight: 8,
+    minWidth: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   backButtonText: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '600',
     color: '#007AFF',
   },
@@ -903,44 +983,68 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
+    minHeight: 64,
+    alignItems: 'stretch',
   },
   memberNameCell: {
     width: 100,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
     borderRightWidth: 1,
     borderRightColor: '#ddd',
+    minHeight: 72,
   },
   penaltyHeadersRow: {
     flexDirection: 'row',
+    flex: 1,
   },
   penaltyHeaderCell: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 8,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'stretch',
     borderRightWidth: 1,
     borderRightColor: '#eee',
+    flexDirection: 'column',
+    gap: 2,
+  },
+  penaltyNameContainer: {
+    minHeight: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#333',
+    color: '#000000',
   },
   penaltyHeaderText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#333',
+    color: '#000000',
     textAlign: 'center',
+    lineHeight: 13,
+  },
+  penaltyAmountContainer: {
+    minHeight: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   penaltyAmountText: {
-    fontSize: 11,
-    color: '#666',
+    fontSize: 9,
+    color: '#006200',
     textAlign: 'center',
-    marginTop: 2,
+    fontWeight: '500',
+    lineHeight: 12,
+  },
+  penaltyAmountPlaceholder: {
+    fontSize: 10,
+    color: 'transparent',
+    textAlign: 'center',
+    fontWeight: '500',
   },
   totalHeaderCell: {
     paddingHorizontal: 8,
@@ -950,76 +1054,87 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderLeftColor: '#ddd',
     backgroundColor: '#f5f5f5',
+    minHeight: 72,
   },
   dataRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    minHeight: 64,
+    minHeight: 72,
+    alignItems: 'stretch',
   },
   memberNameText: {
     fontSize: 13,
     fontWeight: '500',
     color: '#000',
+    flex: 1,
   },
   penaltyCellsRow: {
     flexDirection: 'row',
+    flex: 1,
   },
   commitCell: {
-    paddingHorizontal: 4,
-    paddingVertical: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 8,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
     borderRightWidth: 1,
     borderRightColor: '#eee',
+    gap: 4,
+    minHeight: 72,
+    overflow: 'hidden',
   },
   commitButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 4,
     backgroundColor: '#007AFF',
-    minWidth: 38,
-    minHeight: 38,
+    minWidth: 36,
+    minHeight: 36,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   buttonSymbol: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: '#fff',
   },
   commitCount: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: '#000',
-    marginHorizontal: 6,
-    minWidth: 28,
+    minWidth: 20,
+    maxWidth: 24,
     textAlign: 'center',
+    flex: 0,
+    flexShrink: 0,
   },
   totalCell: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     justifyContent: 'center',
     alignItems: 'center',
     borderLeftWidth: 1,
     borderLeftColor: '#ddd',
     backgroundColor: '#f9f9f9',
+    minHeight: 72,
   },
   totalText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#007AFF',
+    color: '#000000',
   },
 
   summaryLabel: {
     fontSize: 11,
-    color: '#666',
+    color: '#000000',
   },
   summaryValue: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#007AFF',
+    color: '#000000',
   },
   endSessionButton: {
     paddingHorizontal: 16,
@@ -1043,7 +1158,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: '#666',
+    color: '#000000',
     marginBottom: 16,
   },
   retryButton: {
@@ -1149,32 +1264,26 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   actionsBar: {
-    position: 'absolute',
-    right: 8,
-    bottom: 4,
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    maxHeight: 48,
   },
   addMembersButton: {
     backgroundColor: '#28a745',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 6,
+    minWidth: 100,
   },
   addMembersButtonText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#fff',
   },

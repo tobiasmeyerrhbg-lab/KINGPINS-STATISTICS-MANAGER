@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Image,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,6 +17,7 @@ import { getSummariesBySession, MemberSessionSummary } from '../../services/memb
 import { getMembersByClub, Member } from '../../services/memberService';
 import { getPenaltiesByClub, Penalty } from '../../services/penaltyService';
 import { getCommitSummary } from '../../services/sessionLogService';
+import { exportSessionData, exportAndShareSessionData } from '../../services/sessionDetailsExportService';
 import { SessionStackParamList } from '../../navigation/SessionStackNavigator';
 
 interface Props {
@@ -129,6 +131,41 @@ export function SessionDetailsScreen({ route }: Props) {
     navigation.navigate('SessionVerification', { sessionId: session.id, clubId: resolvedClubId });
   };
 
+  const handleExportSessionData = async () => {
+    if (!session) {
+      Alert.alert('Error', 'Session data not available');
+      return;
+    }
+
+    try {
+      const [csvUri, jsonUri] = await exportSessionData(session.id);
+      Alert.alert(
+        'Export Successful',
+        `Session data exported to:\n\n${csvUri}\n\n${jsonUri}`,
+        [{ text: 'OK', onPress: () => {} }]
+      );
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert('Export Failed', errorMsg, [{ text: 'OK', onPress: () => {} }]);
+      console.error('Export error:', error);
+    }
+  };
+
+  const handleShareSessionData = async () => {
+    if (!session) {
+      Alert.alert('Error', 'Session data not available');
+      return;
+    }
+
+    try {
+      await exportAndShareSessionData(session.id);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert('Share Failed', errorMsg, [{ text: 'OK', onPress: () => {} }]);
+      console.error('Share error:', error);
+    }
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -183,8 +220,7 @@ export function SessionDetailsScreen({ route }: Props) {
                 <View key={penaltyId} style={styles.winnerCard}>
                   <Text style={styles.penaltyName}>{getPenaltyName(penaltyId)}</Text>
                   {winnerIdArray.map(id => {
-                    const summary = summaries.find(s => s.memberId === id);
-                    const commitCount = summary?.commitCounts?.[penaltyId] || 0;
+                    const commitCount = commitCounts[id]?.[penaltyId] || 0;
                     return (
                       <View key={id} style={styles.personRow}>
                         <Image source={getMemberAvatar(id)} style={styles.avatarSmall} />
@@ -274,10 +310,16 @@ export function SessionDetailsScreen({ route }: Props) {
           <TouchableOpacity style={styles.actionButton} onPress={navigateToSessionTable}>
             <Text style={styles.actionButtonText}>Session Table</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButtonSecondary} onPress={navigateToSessionAnalysis}>
+          <TouchableOpacity style={styles.actionButton} onPress={navigateToSessionAnalysis}>
             <Text style={styles.actionButtonText}>Session Analysis</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButtonSecondary} onPress={navigateToVerification}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleExportSessionData}>
+            <Text style={styles.actionButtonText}>📥 Export Data</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton} onPress={handleShareSessionData}>
+            <Text style={styles.actionButtonText}>📤 Share Data</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton} onPress={navigateToVerification}>
             <Text style={styles.actionButtonText}>Verify Totals</Text>
           </TouchableOpacity>
         </View>
@@ -323,13 +365,13 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    color: '#64748B',
+    color: '#000000',
     fontWeight: '500',
   },
   value: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#0F172A',
+    color: '#000000',
   },
   finishedStatus: {
     color: '#28a745',
@@ -356,29 +398,16 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
     gap: 12,
     marginBottom: 8,
   },
   actionButton: {
-    flexBasis: '48%',
     backgroundColor: '#3B82F6',
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
     shadowColor: '#3B82F6',
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  actionButtonSecondary: {
-    flexBasis: '48%',
-    backgroundColor: '#0F172A',
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    shadowColor: '#000',
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 2,
@@ -396,14 +425,14 @@ const styles = StyleSheet.create({
   },
   penaltyName: {
     fontSize: 14,
-    color: '#64748B',
+    color: '#000000',
     fontWeight: '600',
     marginBottom: 4,
   },
   winnerName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#000000',
   },
   winnerCommitCount: {
     fontSize: 13,
@@ -478,13 +507,13 @@ const styles = StyleSheet.create({
   },
   commitLabel: {
     fontSize: 14,
-    color: '#64748B',
     fontWeight: '500',
+    color: '#000000',
   },
   commitValue: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#3B82F6',
+    color: '#000000',
   },
   summaryDetails: {
     flexDirection: 'row',

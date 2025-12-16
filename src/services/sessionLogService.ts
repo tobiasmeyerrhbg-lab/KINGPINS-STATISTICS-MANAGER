@@ -9,7 +9,9 @@
  * - system=6: reward deduction
  * - system=8: positive commit
  * - system=9: negative commit
- * - system=11-14: finalization evaluation logs
+ * - system=11: final totals (extra: finalAmounts object)
+ * - system=12: commit summary (extra: commitSummary object with counts per penalty)
+ * - system=15: member playtime per session (extra: { playtime: seconds })
  * 
  * All operations are append-only. No deletion, no modification.
  * This service DOES NOT handle undo logic — system=9 is a regular commit with negative delta.

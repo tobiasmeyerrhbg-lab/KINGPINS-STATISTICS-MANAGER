@@ -37,6 +37,8 @@ export default function PenaltiesScreen() {
   const [sections, setSections] = useState<PenaltySection[]>([]);
   const [showActiveOnly, setShowActiveOnly] = useState(true);
   const [loading, setLoading] = useState(true);
+  // UPDATED: Demo Loader - track if demo penalties were loaded to hide button
+  const [demoLoaded, setDemoLoaded] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -85,12 +87,12 @@ export default function PenaltiesScreen() {
     (navigation as any).navigate('PenaltyCreate', { clubId });
   };
 
-  // NEW: Demo Loader - Load Demo Penalties
+  // UPDATED: Demo Loader - Load Demo Penalties (einmalig, dann Button ausblenden)
   const handleLoadDemoPenalties = async () => {
     try {
       setLoading(true);
       
-      // Demo Penalty 1: Kegelkönig-Pkt.
+      // 1. Kegelkönig-Pkt.
       await createPenalty({
         clubId,
         name: 'Kegelkönig-Pkt.',
@@ -104,7 +106,7 @@ export default function PenaltiesScreen() {
         rewardValue: 0,
       });
 
-      // Demo Penalty 2: Pudel
+      // 2. Pudel
       await createPenalty({
         clubId,
         name: 'Pudel',
@@ -117,7 +119,7 @@ export default function PenaltiesScreen() {
         rewardEnabled: false,
       });
 
-      // Demo Penalty 3: Fötzken
+      // 3. Fötzken
       await createPenalty({
         clubId,
         name: 'Fötzken',
@@ -130,21 +132,191 @@ export default function PenaltiesScreen() {
         rewardEnabled: false,
       });
 
-      // Demo Penalty 4: Kranz
+      // 4. Kranz
       await createPenalty({
         clubId,
         name: 'Kranz',
         description: '',
-        amount: -3.5,
+        amount: 0,
         amountOther: 0.5,
-        affect: 'BOTH',
-        isTitle: true,
+        affect: 'OTHER',
+        isTitle: false,
         active: true,
         rewardEnabled: false,
       });
 
-      // Reload penalties
+      // 5. Phrase
+      await createPenalty({
+        clubId,
+        name: 'Phrase',
+        description: '',
+        amount: 0.5,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 6. Dusseligkeit
+      await createPenalty({
+        clubId,
+        name: 'Dusseligkeit',
+        description: '',
+        amount: 0.5,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 7. Derber Spruch
+      await createPenalty({
+        clubId,
+        name: 'Derber Spruch',
+        description: '',
+        amount: 0.5,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 8. Bimmel
+      await createPenalty({
+        clubId,
+        name: 'Bimmel',
+        description: '',
+        amount: 1,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 9. Alle 9
+      await createPenalty({
+        clubId,
+        name: 'Alle 9',
+        description: '',
+        amount: 0,
+        amountOther: 0.5,
+        affect: 'OTHER',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 10. Abwesend
+      await createPenalty({
+        clubId,
+        name: 'Abwesend',
+        description: '',
+        amount: 2,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 11. Nicht dran
+      await createPenalty({
+        clubId,
+        name: 'Nicht dran',
+        description: '',
+        amount: 2,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 12. Anstoßen vergessen
+      await createPenalty({
+        clubId,
+        name: 'Anstoßen vergessen',
+        description: '',
+        amount: 4,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 13. Bier verschüttet
+      await createPenalty({
+        clubId,
+        name: 'Bier verschüttet',
+        description: '',
+        amount: 1,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 14. Kugel fallengelassen
+      await createPenalty({
+        clubId,
+        name: 'Kugel fallengelassen',
+        description: '',
+        amount: 2,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 15. Baustelle
+      await createPenalty({
+        clubId,
+        name: 'Baustelle',
+        description: '',
+        amount: 4,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 16. Ader
+      await createPenalty({
+        clubId,
+        name: 'Ader',
+        description: '',
+        amount: 0.5,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // 17. Spiel verloren
+      await createPenalty({
+        clubId,
+        name: 'Spiel verloren',
+        description: '',
+        amount: 0.5,
+        amountOther: 0,
+        affect: 'SELF',
+        isTitle: false,
+        active: true,
+        rewardEnabled: false,
+      });
+
+      // Reload penalties and hide button
       await loadData();
+      setDemoLoaded(true);
     } catch (error) {
       console.error('Error loading demo penalties:', error);
       alert('Failed to load demo penalties');
@@ -260,13 +432,15 @@ export default function PenaltiesScreen() {
           </Text>
         </TouchableOpacity>
         
-        {/* NEW: Demo Loader Button */}
-        <TouchableOpacity
-          style={styles.demoButton}
-          onPress={handleLoadDemoPenalties}
-        >
-          <Text style={styles.demoButtonText}>Load Demo-Penalties</Text>
-        </TouchableOpacity>
+        {/* Demo Loader Button (hidden after first use) */}
+        {!demoLoaded && (
+          <TouchableOpacity
+            style={styles.demoButton}
+            onPress={handleLoadDemoPenalties}
+          >
+            <Text style={styles.demoButtonText}>Load Demo-Penalties</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <SectionList

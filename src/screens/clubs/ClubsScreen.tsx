@@ -35,6 +35,8 @@ export default function ClubsScreen() {
   const navigation = useNavigation();
   const [clubs, setClubs] = useState<ClubWithCount[]>([]);
   const [loading, setLoading] = useState(true);
+  // UPDATED: Demo Loader - track if demo club was loaded to hide button
+  const [demoLoaded, setDemoLoaded] = useState(false);
 
   // Reload clubs when screen comes into focus
   useFocusEffect(
@@ -78,7 +80,7 @@ export default function ClubsScreen() {
     (navigation as any).navigate('ClubCreate');
   };
 
-  // NEW: Demo Loader - Load Demo Club
+  // UPDATED: Demo Loader - Load Demo Club (einmalig, dann Button ausblenden)
   const handleLoadDemoClub = async () => {
     try {
       setLoading(true);
@@ -89,6 +91,7 @@ export default function ClubsScreen() {
       
       if (demoExists) {
         // Navigate to existing demo club
+        setDemoLoaded(true);
         (navigation as any).navigate('ClubDetail', { 
           clubId: demoExists.id, 
           clubName: demoExists.name 
@@ -96,7 +99,7 @@ export default function ClubsScreen() {
         return;
       }
       
-      // demo: initialize new club fields with defaults
+      // Create new demo club
       const newClub = await createClub({
         name: 'Berka Kingpins',
         maxMultiplier: 10,
@@ -105,8 +108,9 @@ export default function ClubsScreen() {
         timeFormat: 'HH:mm',
       });
 
-      // Reload clubs
+      // Reload clubs and hide button
       await loadClubs();
+      setDemoLoaded(true);
       
       // Navigate to the new club
       (navigation as any).navigate('ClubDetail', { 
@@ -203,14 +207,16 @@ export default function ClubsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* NEW: Demo Loader Button + Reset Button */}
+      {/* UPDATED: Demo Loader Button (ausgeblendet nach Verwendung) + Reset Button */}
       <View style={styles.headerContainer}>
-        <TouchableOpacity
-          style={styles.demoButton}
-          onPress={handleLoadDemoClub}
-        >
-          <Text style={styles.demoButtonText}>Load Demo-Club</Text>
-        </TouchableOpacity>
+        {!demoLoaded && (
+          <TouchableOpacity
+            style={styles.demoButton}
+            onPress={handleLoadDemoClub}
+          >
+            <Text style={styles.demoButtonText}>Load Demo-Club</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={[styles.demoButton, styles.resetButton]}
           onPress={handleResetDatabase}

@@ -25,7 +25,8 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Member, getMember, updateMember, deleteMember } from '../../services/memberService';
-import * as ImagePicker from 'react-native-image-picker';
+// UPDATED: use shared picker that supports camera or gallery
+import { pickImageWithPrompt } from '../../services/imagePickerService';
 
 export default function MemberEditScreen() {
   const navigation = useNavigation();
@@ -67,20 +68,10 @@ export default function MemberEditScreen() {
     }
   };
 
-  const handlePickPhoto = () => {
-    ImagePicker.launchImageLibrary(
-      {
-        mediaType: 'photo',
-        maxWidth: 512,
-        maxHeight: 512,
-        quality: 0.8,
-      },
-      (response) => {
-        if (response.assets && response.assets.length > 0) {
-          setPhotoUri(response.assets[0].uri);
-        }
-      }
-    );
+  const handlePickPhoto = async () => {
+    // UPDATED: prompt user to choose camera or library; compressed via shared options
+    const uri = await pickImageWithPrompt('photo');
+    if (uri) setPhotoUri(uri);
   };
 
   const handleSave = async () => {

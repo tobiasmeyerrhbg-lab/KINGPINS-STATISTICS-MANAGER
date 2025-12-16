@@ -332,16 +332,10 @@ When user presses **End Session**:
    - Update Session.totalAmounts via `updateTotalAmounts(sessionId, updatedTotals)`
    - Return updated totals for final ledger/summary generation
 
-**Reward Deduction Rules:**
-- Rewards ALWAYS deduct from the winner only (never distributed)
-- **NOT multiplied** — reward value is absolute
-- Deduction happens BEFORE final summary logs and ledger entries
-- Rewards create SessionLog entries (system=6) only, not separate ledger entries
 
 **Reward Deduction Rules:**
 - Rewards ALWAYS apply to the winner, never distributed.
 - **If penalty is a title penalty (isTitle=true):** Reward deducts from the ONE selected winner
-- **If penalty is NOT a title penalty:** Not applicable in current model (title penalties only have rewards)
 - **Rewards create SessionLog entries (system=6) only, not ledger entries**
 - Ledger entries created once at finalization with final aggregated totals per member
 

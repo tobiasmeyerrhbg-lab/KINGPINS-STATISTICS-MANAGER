@@ -311,33 +311,25 @@ export async function finalizeSession(
       ]
     );
 
-    // Create evaluation logs (system=11-14)
-    const { createLog } = await import('./sessionLogService');
-    const { getCommitSummary } = await import('./sessionLogService');
+    // Summary log creation (system 11–15) is centralized in finalize orchestrator
+    // Intentionally no writes for system=11–15 here.
 
+    const { getCommitSummary, getLogsBySession } = await import('./sessionLogService');
     const commitSummary = await getCommitSummary(sessionId);
-
-    // system=11: FinalTotals
-    await createLog({
-      sessionId,
-      clubId: session.clubId,
-      system: 11,
-      timestamp: now,
-      extra: JSON.stringify(session.totalAmounts),
-    });
-
-    // system=12: CommitSummary
-    await createLog({
-      sessionId,
-      clubId: session.clubId,
-      system: 12,
-      timestamp: now,
-      extra: JSON.stringify(commitSummary),
-    });
+    const allLogs = await getLogsBySession(sessionId);
 
     // Create/Update MemberSessionSummary records
     const { createMemberSessionSummary, updateMemberSessionSummary } = await import('./memberSessionSummaryService');
     for (const memberId of session.activePlayers) {
+      // Find when this member joined (system=1 log)
+      const system1Log = allLogs.find(log => log.system === 1 && log.memberId === memberId);
+      const joinTime = system1Log ? system1Log.timestamp : session.startTime;
+      
+      // Calculate playtime from join time to session end
+      const joinTimeMs = new Date(joinTime).getTime();
+      const endTimeMs = new Date(now).getTime();
+      const memberPlaytimeSeconds = Math.floor((endTimeMs - joinTimeMs) / 1000);
+      
       const memberCommits = commitSummary[memberId] || {};
       const totalCommits = Object.values(memberCommits).reduce((sum: number, count) => sum + (count as number), 0);
       const payload = {
@@ -347,7 +339,7 @@ export async function finalizeSession(
         totalAmount: session.totalAmounts[memberId] || 0,
         totalCommits,
         commitCounts: memberCommits,
-        playtimeSeconds: playingTimeSeconds,
+        playtimeSeconds: memberPlaytimeSeconds,
       };
 
       // try update, if no rows affected then create

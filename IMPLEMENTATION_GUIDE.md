@@ -1,6 +1,6 @@
 # IMPLEMENTATION_GUIDE
 
-PP (PenaltyPro) ist eine Android-App zur Verwaltung eines Sport-/Club-Betriebs.
+Eine Android-App zur Verwaltung eines Sport-/Club-Betriebs.
 Sie verwaltet Mitglieder, Sessions, Live-Penalties, Finanzdaten, Titelgewinne und umfangreiche Statistiken.
 
 Das System basiert auf vier Grundpfeilern:
@@ -573,62 +573,817 @@ The Statistics module is divided into four main tabs:
 
 1. Tab: All-Time Statistics (Club / Player)
 
-Cross-Session Analysis (with time-range selection)
+2. Tab: Cross-Session Analysis (with time-range selection)
 
-Session Analysis (Session Graph Engine)
+3. Tab: Session Analysis (Session Graph Engine)
 
-Exports (Built-in reports)
+4. Tab: Exports (Built-in reports)
 
 Each tab operates on top of the SessionLog system, which remains the single source of truth.
 
-10.1 Tab 1 — All-Time Statistics (Club / Player)
+# 10.1 Tab 1 — All-Time Statistics (Club-Level & Member-Level)
 
-   This tab aggregates all data across all Sessions of the selected Club.
+   This tab provides long-term, cumulative statistics for a single Club. All calculations are derived from the SessionLog, which is the single source of truth.
 
+It is divided into two levels:
+   - Club-Level Statistics
+   - Player-Level Statistics
+
+   # A. Club-Level All-Time Statistics
    1. Total Amount (All Sessions)
 
-   Displays the full penalty amount across all sessions.
-   Computed as:
+   Purpose:
+   Shows the total penalty amounts accumulated by all players in all Sessions of a Club.
 
-   SUM(session.totalAmount) over all sessions
+   Source:
+   system=11 log (final amount per participating member in each session).
 
+   Calculation:
+   Sum all amountTotal (or equivalent in system 11) values for all members across all sessions.
+   This already includes multiplier effects.
+
+   Notes for Implementation:
+   Each Session produces exactly one system 11 log.
+   Use this log to avoid recomputing from individual commits.
 
    2. Total Playtime (All Sessions)
 
-   Computed from session start/end timestamps:
-   SUM(session.endTime - session.startTime)
+   Purpose:
+   Total duration of all sessions played in the club.
+
+   Source:
+   Session start and end times: session.endTime - session.startTime.
+
+   Calculation:
+   Sum duration of all sessions.
+
+   Notes:
+   Optional: later link to individual member participation for attendance stats.
 
    3. Total Commits per Penalty
 
-   A table showing how many times each penalty was committed across all sessions.
-   Default: Show all penalties.
-   Filter: Select one or multiple penalties.
+   Purpose:
+   How many times each penalty was committed across all sessions.
 
-   Formula:
+   Source:
+   system=12 log (total commits per member per penalty in each session).
 
-   COUNT(log where log.penaltyId = X)
-   (positive and negative commits included, negative counted as negative or absolute? → currently absolute)
+   Calculation:
+   For each penalty, sum the total commits across all members in all sessions.
 
-   4. Total Wins per Title Penalty
+   4. Total Wins per Title Penalty (Top 3 Winners)
 
-   Shows how many times each member has won a title.
-   Default: Show all penalties that represent titles.
-   Filterable by title penalty.
+   Purpose:
+   Shows the top 3 winners for each title penalty over all sessions.
 
-   5. Matrix: All-Time Commits per Penalty per Member
+   Source:
+   system=2
 
-   A two-axis static table:
+   Calculation:
+   For each title penalty:
+   Aggregate all wins per member across sessions.
 
-   X-axis: All penalties
-   Y-axis: All members
-   Cell value: Total commits of this penalty by this member across all sessions
+   Sort descending.
 
-   Supports:
+   Display top 3 members with their total wins.
 
-   Sorting by row (member)
-   Sorting by column (penalty)
-   Sorting by any metric (ascending/descending)
 
+   5. All-Time Commit Matrix
+
+   Purpose:
+   Shows a table of commits for each member and penalty across all sessions.
+
+   Source:
+   system=12 logs.
+
+   Structure:
+
+   X-axis: Penalties
+
+   Y-axis: Members
+
+   Cell: total commits of that member for that penalty across all sessions
+
+   Features:
+
+   Sort by columns (penalty totals, member totals)
+
+   Filter penalties or members
+
+   Exportable (CSV, PNG, PDF)
+
+   # B. Player-Level All-Time Statistics
+   1. Total Commits per Penalty (per Member)
+
+   Purpose:
+   Shows each member’s total commits for each penalty.
+
+   Source:
+   system=12 logs.
+
+   2. Total Penalty Amount per Member
+
+   Purpose:
+   Shows the cumulative penalty amount for each member.
+
+   Source:
+   system=11 log.
+
+   3. All-Time Playtime per Member
+
+   Purpose:
+   Calculates how long each member actively participated in sessions.
+
+   Source:
+   New system log (e.g., system=15) that records member playtime per session.
+
+   Calculation:
+   Sum all member playtime across all sessions.
+
+   4. Attendance Percentage (All-Time)
+
+   Purpose:
+   Shows member participation as a percentage of total club playtime.
+
+   Calculation:
+
+   attendance% = (member.totalPlayingTime / club.totalPlayingTime) * 100
+
+
+   Source:
+   member.totalPlayingTime from new system log
+   club.totalPlayingTime from all sessions
+
+   Filters & Features for Tab 1
+   Club: always pre-selected
+   Penalties: include/exclude specific penalties
+   Members: include/exclude specific members
+
+   Sort options: alphabetical, totals ascending/descending, etc.
+
+   Export functionality: CSV, PNG/JPEG, PDF
+
+# 10.1 Tab 1 — All-Time Statistics (Club-Level & Member-Level)
+
+**Status:** ✅ FULLY IMPLEMENTED
+
+This tab provides comprehensive, long-term cumulative statistics for a single Club across all finished sessions. All calculations are derived from the SessionLog and Session tables, which serve as the single source of truth.
+
+## A. Club-Level All-Time Statistics
+
+The Club-Level tab displays 5 key metrics aggregated across all members and sessions. **Note:** Penalty filter chips are NOT shown; all penalties are always displayed.
+
+### 1. Total Amount (All Sessions) — **PROMINENT DISPLAY**
+
+**Purpose:** Shows the cumulative penalty amounts accumulated by all members across all finished sessions.
+
+**Data Source:** `SessionLog` table with `system=11` (final session summary logs)
+- Each system=11 log contains `extra` field = JSON object `{ memberId: amount }` with final amounts for all members in that session
+- Amounts already include multiplier effects and reward deductions
+
+**Calculation:**
+```
+For each system=11 log:
+  Parse extra field as JSON
+  For each memberId: amount in extra:
+    totalAmount += amount
+```
+
+**UI Display:**
+- Location: Summary card at top of Club-Level tab
+- Format: `{currency}{amount.toFixed(2)}` (e.g., "€240.00")
+- **Visual Prominence:** Larger font size (20px), extra bold weight (800), highlighted
+- **Icons:** 💰 currency icon displayed next to label
+- Currency source: `Club.currency` column
+- All text wrapped in `<Text>` component (React Native requirement)
+
+**Implementation Details:**
+- File: `/src/services/allTimeStatisticsService.ts` → `getClubLevelStats()` function (lines 135-143)
+- Component: `/src/screens/statistics/AllTimeStatisticsTab.tsx` (lines 199-202)
+- Style: `summaryLabelProminent` and `summaryValueProminent`
+
+---
+
+### 2. Total Playtime (All Sessions) — **PROMINENT DISPLAY**
+
+**Purpose:** Total duration of all finished sessions in the club.
+
+**Data Source:** `Session` table with status='finished'
+- Calculate duration: `endTime - startTime` for each session
+- Measured in seconds internally
+
+**Calculation:**
+```
+totalPlaytime = SUM(endTime - startTime) for all finished sessions in seconds
+Display format: {hours}h {minutes}m (e.g., "4h 15m")
+```
+
+**UI Display:**
+- Location: Summary card
+- Format: Human-readable h:m format
+- **Visual Prominence:** Larger font size (20px), extra bold weight (800), highlighted
+- **Icons:** ⏱️ clock icon displayed next to label
+- All text wrapped in `<Text>` component
+
+**Implementation Details:**
+- File: `/src/services/allTimeStatisticsService.ts` (lines 62-76)
+- Component: `/src/screens/statistics/AllTimeStatisticsTab.tsx` (lines 203-206)
+- Style: `summaryLabelProminent` and `summaryValueProminent`
+
+**NOTE:** Total Commits is **NOT displayed** at club level as per requirements.
+
+---
+
+### 3. Total Commits per Penalty
+
+**Purpose:** Shows how many times each penalty was committed across all members and sessions.
+
+**Data Source:** `SessionLog` table with `system=12` (commit summary logs per session)
+- Each system=12 log contains `extra` field = JSON object `{ memberId: { penaltyId: count } }` with commit counts for all member-penalty pairs in that session
+- Aggregate per penalty across all members and sessions
+
+**Calculation:**
+```
+For each system=12 log:
+  Parse extra field as JSON
+  For each memberId in extra:
+    For each penaltyId: count in extra[memberId]:
+      commitsByPenalty[penaltyId] += count
+```
+
+**UI Display:**
+- Location: "Commits by Penalty" table section
+- Format: Two-column table [Penalty Name] [Total Commits]
+- **Note:** NO penalty filter chips at club level; all penalties always shown
+- Sortable: by penalty name or commit count, ascending/descending
+- All text wrapped in `<Text>` component
+
+**Sorting:**
+- Emoji button (📊/📝) toggles sort key: commits vs name
+- Arrow button (⬆️/⬇️) toggles sort order
+- Implementation: `clubSortKey` and `clubSortOrder` state
+
+**Implementation Details:**
+- File: `/src/services/allTimeStatisticsService.ts` (lines 165-176)
+- Component: `/src/screens/statistics/AllTimeStatisticsTab.tsx` (lines 209-258)
+
+---
+
+### 4. Top 3 Winners per Title Penalty — **WIN COUNT ONLY**
+
+**Purpose:** Identifies top 3 members with most **title wins** for each winnable penalty.
+
+**Data Source:** `Session.winners` field (JSON)
+- Each finished session has `winners` field = JSON object `{ penaltyId: winnerId }` or `{ penaltyId: [winnerId] }`
+- Count how many times each member won each penalty across all sessions
+- **NOTE:** This is NOT commit count — it's actual title wins
+
+**Calculation:**
+```
+For each finished session:
+  Parse Session.winners as JSON
+  For each penaltyId: winnerId in winners:
+    winCountsByPenalty[penaltyId][winnerId] += 1
+
+For each penalty:
+  Sort members by win count descending
+  Return top 3
+```
+
+**UI Display:**
+- Location: "Top Winners by Penalty" section below commits table
+- For each penalty with winners:
+  - Header: Penalty name in bold
+  - Ranked list: #1 [Member Name] [Win Count] wins
+- Format example: `#1 John Smith  5 wins`
+- **Display:** Win count only, NOT commit count
+- All text wrapped in `<Text>` component
+
+**Implementation Details:**
+- File: `/src/services/allTimeStatisticsService.ts` (lines 78-98 for win counting, lines 203-230 for building winners list)
+- Component: `/src/screens/statistics/AllTimeStatisticsTab.tsx` (lines 260-274)
+- Data structure: `{ penaltyId, penaltyName, winners: [{ memberId, memberName, winCount }] }`
+
+---
+
+### 5. All-Time Commit Matrix (Member × Penalty) — **WITH PENALTY HEADERS**
+
+**Purpose:** Grid view showing commits for each member across all penalties, making patterns visible.
+
+**Data Source:** `SessionLog` table with `system=12`
+- Aggregate commits per member-penalty pair across all sessions
+
+**Calculation:**
+```
+For each system=12 log:
+  Parse extra field as JSON
+  For each memberId in extra:
+    For each penaltyId: count in extra[memberId]:
+      commitMatrix[memberId][penaltyId] += count
+```
+
+**UI Display:**
+- Location: "All-Time Commit Matrix" section
+- **Layout:**
+  - **Header Row:** Shows all penalty names (X-axis)
+  - **Data Rows:** One row per member (Y-axis), cells show commit counts
+- Cell display: Commit count or "—" if zero
+- Cell background: Green (#d1fae5) if count > 0, gray (#f3f4f6) if count = 0
+- Styled as a table: column headers with borders and clear alignment
+- Scrollable horizontally for many penalties
+- Fullscreen modal available via "🔍 Fullscreen" button; modal shows the same matrix in a larger view
+- All text wrapped in `<Text>` component
+
+**Matrix Structure:**
+```
+        | Penalty A | Penalty B | Penalty C |
+Member 1|     5     |     0     |     2     |
+Member 2|     3     |     7     |     0     |
+```
+
+**Implementation Details:**
+- File: `/src/services/allTimeStatisticsService.ts` (lines 232-247)
+- Component: `/src/screens/statistics/AllTimeStatisticsTab.tsx` (lines 276-305)
+- Header Row: Lines 282-290 (new penalty header cells)
+- Data Rows: Lines 291-305 (member rows with commit cells)
+
+**Layout Updates (Dec 2025):**
+- Row spacing: compact rows with minimal vertical gaps for readability.
+- Member pictures: display `Member.photoUri` to the left of member names; fallback to `assets/images/dummy/default-member.png` if missing.
+- Name column: fixed-width container aligns avatar + text across header and rows.
+- Responsiveness: keep horizontal scroll and table borders; wrap all strings in `<Text>`.
+
+---
+
+## B. Member-Level All-Time Statistics
+
+The Member-Level tab displays 3 key metrics per member. Member filter chips are shown for toggling member visibility.
+
+### 1. Total Penalty Amount per Member
+
+**Purpose:** Cumulative penalty amount each member has incurred across all finished sessions.
+
+**Data Source:** `SessionLog` table with `system=11` (final session summary logs)
+- Each system=11 log contains member's final amount for that session
+- Aggregate per member
+
+**Calculation:**
+```
+For each member:
+  totalAmount = SUM(SessionLog.amountTotal) WHERE system=11 AND memberId=?
+```
+
+**UI Display:**
+- Location: Member card in "Member Statistics" section
+- Format: `{currency}{amount.toFixed(2)}` (e.g., "€65.00")
+- Currency source: `Club.currency`
+- Label: "Total Amount:"
+- All text wrapped in `<Text>` component
+
+**Implementation Details:**
+- File: `/src/services/allTimeStatisticsService.ts` (lines 260-264)
+- Component: `/src/screens/statistics/AllTimeStatisticsTab.tsx` (line 448)
+
+---
+
+### 2. All-Time Playtime per Member
+
+**Purpose:** Total duration each member actively participated in sessions.
+
+**Data Source:** `SessionLog` table with `system=15` (member playtime logs created at session end)
+- Each system=15 log is created for each member at session finalization
+- Contains `memberId` field and `extra.playtime` = duration in seconds for that member in that session
+- **Important:** system=15 logs are created in `sessionService.ts` during `endSession()` function
+- Aggregate per member across all sessions
+
+**Calculation:**
+```
+For each member:
+  totalPlaytime = SUM(SessionLog.extra.playtime) WHERE system=15 AND memberId=?
+  Display format: {hours}h {minutes}m (e.g., "2h 45m")
+```
+
+**UI Display:**
+- Location: Member card in "Member Statistics" section
+- Format: Human-readable h:m format
+- Label: "Playtime:"
+- All text wrapped in `<Text>` component
+
+**Implementation Details:**
+- File: `/src/services/allTimeStatisticsService.ts` (lines 310-318 for processing system=15 logs)
+- Component: `/src/screens/statistics/AllTimeStatisticsTab.tsx` (line 451)
+- **Log Creation:** `/src/services/sessionService.ts` lines 338-348 (system=15 logs created during endSession)
+
+**System=15 Log Structure:**
+```typescript
+{
+  sessionId: string,
+  clubId: string,
+  memberId: string,        // Individual member
+  system: 15,
+  timestamp: ISO string,
+  extra: { playtime: number }  // Duration in seconds
+}
+```
+
+**NOTE:** Ensure `sessionService.ts` creates system=15 logs for all active players when ending a session.
+
+---
+
+### 3. Attendance (Sessions & Percentage)
+
+**Purpose:** Shows session count and participation percentage relative to total club sessions.
+
+**Data Source:**
+- `SessionLog` for unique sessions per member (from system=11 or system=15 logs)
+- `Session` table for total finished sessions count
+
+**Calculation (Updated):**
+```
+For each member:
+  attendanceSessions = COUNT(DISTINCT SessionLog.sessionId) WHERE memberId=? (from system=11/15)
+  clubTotalPlaytimeSeconds = SUM(Session.endTime - Session.startTime) over finished sessions
+  attendancePercentage = (member.totalPlaytime / clubTotalPlaytimeSeconds) * 100
+```
+
+**UI Display:**
+- Location: Member card
+- Format: `{sessions} sessions ({percentage.toFixed(0)}%)` (e.g., "8 sessions (80%)")
+- Label: "Attendance:"
+- All text wrapped in `<Text>` component
+
+**Implementation Details:**
+- File: `/src/services/allTimeStatisticsService.ts` (tracks `sessionIds`; percentage based on playtime ratio)
+- Component: `/src/screens/statistics/AllTimeStatisticsTab.tsx` (line 454)
+
+**NOTE:** Attendance is tracked via Set<sessionId> when processing system=11 and system=15 logs.
+
+---
+
+## C. Filters & Sorting
+
+### Club-Level Tab
+
+**Filters:**
+- **Penalty Filter:** NOT shown; all penalties always displayed
+
+**Sorting (for Commits by Penalty table):**
+- Sort by: Penalty Name or Total Commits
+- Order: Ascending (⬆️) or Descending (⬇️)
+- Default: Commits descending
+- Implementation: `clubSortKey` and `clubSortOrder` state
+
+### Member-Level Tab
+
+**Filters:**
+- **Member Filter Chips:** Show all members, toggle to include/exclude
+- Selected members shown in blue, unselected in gray
+- Affects: Member cards display
+
+**Sorting (for Member Statistics):**
+- Sort by: Amount, Playtime, Attendance, or Name
+- Order: Ascending or Descending
+- Default: Amount descending
+- Implementation: `playerSortKey` and `playerSortOrder` state
+
+---
+
+## D. Export Functionality (CSV)
+
+### Club-Level Export
+
+**Filename:** `club-statistics-{YYYY-MM-DD}.csv`
+
+**Content Structure:**
+```
+Club-Level All-Time Statistics
+
+Summary
+Total Amount,€240.00
+Total Playtime (seconds),15300
+Total Playtime (formatted),4h 15m
+
+Commits by Penalty
+Penalty Name,Count
+Kegelkönig,15
+Pudel,10
+Fötzken,3
+
+Top Winners by Penalty
+Penalty Name,Rank,Member Name,Wins
+Kegelkönig,1,John Smith,3
+Kegelkönig,2,Jane Doe,2
+...
+
+Commit Matrix (Member x Penalty)
+Member,Kegelkönig,Pudel,Fötzken
+John Smith,8,2,1
+Jane Doe,5,4,2
+...
+```
+
+**Implementation:**
+- File: `/src/services/statisticsExportService.ts` → `generateClubStatisticsCSV()` (lines 16-58)
+- Includes currency symbols in all amounts
+- **Note:** "Total Commits" row is NOT included in Summary section
+- Top Winners shows "Wins" column, not "Commits"
+- Multiple sections separated by blank lines
+
+---
+
+## D. Export Functionality
+
+All-Time Statistics Tab supports local CSV exports for comprehensive data analysis and sharing.
+
+### Export Locations & Formats
+
+**Storage Path:** `/DocumentsDirectory/PenaltyPro/StatisticsExports/`
+
+**Available Exports:**
+
+1. **Club-Level Statistics CSV**
+   - Filename: `club-statistics-{YYYY-MM-DD}.csv`
+   - Location: Club-Level tab → "📥 Export as CSV" button (bottom)
+   - Contains:
+     - Summary: Total Amount, Total Playtime
+     - Commits by Penalty: Penalty Name, Count
+     - Top Winners by Penalty: Penalty, Rank, Member, Win Count
+     - Commit Matrix: Member × Penalty grid
+
+2. **Commit Matrix CSV**
+   - Filename: `commit-matrix-{YYYY-MM-DD}.csv`
+   - Location: All-Time Commit Matrix section → "📥 CSV" button (header)
+   - Contains:
+     - Header row: Penalty names (X-axis)
+     - Data rows: Member names (Y-axis) with commit counts per penalty
+
+3. **Member-Level Statistics CSV**
+   - Filename: `member-statistics-{YYYY-MM-DD}.csv`
+   - Location: Member-Level tab → "📥 Export as CSV" button (bottom)
+   - Contains:
+     - Member Name, Total Amount, Total Playtime (formatted), Playtime (seconds), Attendance Sessions, Attendance %
+
+### CSV Format Details
+
+**Club-Level Example:**
+```
+Club-Level All-Time Statistics
+
+Summary
+Total Amount,€240.00
+Total Playtime (seconds),15300
+Total Playtime (formatted),4h 15m
+
+Commits by Penalty
+Penalty Name,Count
+Kegelkönig,15
+Pudel,10
+
+Top Winners by Penalty
+Penalty Name,Rank,Member Name,Wins
+Kegelkönig,1,John Smith,3
+
+Commit Matrix (Member x Penalty)
+Member,Kegelkönig,Pudel
+John Smith,8,2
+Jane Doe,5,4
+```
+
+**Member-Level Example:**
+```
+Member-Level All-Time Statistics
+
+Member Name,Total Amount,Total Playtime (formatted),Playtime (seconds),Attendance Sessions,Attendance %
+John Smith,€75.00,2h 45m,9900,8,80
+Jane Doe,€65.00,2h 30m,9000,8,80
+```
+
+### Implementation Details
+
+**Service:** `/src/services/statisticsExportService.ts`
+- `generateClubStatisticsCSV()` - Generates club-level CSV
+- `generateCommitMatrixCSV()` - Generates commit matrix CSV (dedicated export)
+- `generatePlayerStatisticsCSV()` - Generates member-level CSV
+- `exportToCSV()` - Saves to local file system and optionally shares via intent
+- `exportToCSVLocal()` - Saves to local file system only; returns file path
+- Uses legacy filesystem API (`expo-file-system/legacy`) to maintain compatibility and avoid deprecation warnings
+
+**Component:** `/src/screens/statistics/AllTimeStatisticsTab.tsx`
+- `handleExportClubStats()` - Triggers club-level export
+- `handleExportCommitMatrix()` - Triggers commit matrix export
+- `handleExportMemberStats()` - Triggers member-level export
+- Buttons: "📥 Export as CSV" at section footers; "📥 CSV" at matrix header
+
+**User Feedback:**
+- On success: Alert notifying user of save location (`/PenaltyPro/StatisticsExports/`)
+- On failure: Error alert with reason (permissions, disk space, etc.)
+- Option to share via intent if expo-sharing is available
+
+### Technical Notes
+
+- Files are automatically timestamped with date (YYYY-MM-DD) to prevent overwrites
+- Currency symbols (from Club.currency) automatically included in monetary exports
+- Playtime automatically formatted as "Xh Ym" in CSV display
+- No images/URLs stored in CSV; member pictures displayed in app UI only
+- All content uses UTF-8 encoding for cross-platform compatibility
+- Uses legacy FileSystem API to maintain stability and avoid deprecation warnings
+
+---
+
+## E. React Native Rendering Rules
+
+**Critical Requirement:** All text strings must be wrapped in `<Text>` components to avoid error: "Text strings must be rendered within a <Text> component"
+
+### Verified Locations
+
+**Club-Level Tab:**
+- ✅ Summary card rows (labels and values)
+- ✅ Commits table rows (penalty names and counts)
+- ✅ Sort buttons and labels
+- ✅ Top Winners section (penalty titles, ranks, names, counts)
+- ✅ Commit Matrix cells (member names and commit counts)
+- ✅ Export button text
+
+**Member-Level Tab:**
+- ✅ Member filter chips (member names)
+- ✅ Sort control buttons and labels
+- ✅ Member cards (names and all metric values)
+- ✅ Export button text
+
+### Example Correct Pattern
+
+```jsx
+// ✅ Correct - text wrapped in <Text>
+<Text style={styles.summaryLabel}>Total Amount:</Text>
+<Text style={styles.summaryValue}>{clubStats.currency}{clubStats.totalAmount.toFixed(2)}</Text>
+
+// ❌ Wrong - bare text outside <Text>
+<View>Total Amount:</View>
+```
+
+---
+
+## F. Data Aggregation Flow
+
+```
+Session Finalization (sessionFinalizationService)
+  ↓ Creates SessionLog entries:
+  - system=11: Final amounts per member
+  - system=12: Commit summaries per member-penalty
+  - system=15: Member playtime
+  ↓
+allTimeStatisticsService (aggregation)
+  - getClubLevelStats(clubId) → ClubLevelStats
+  - getMemberLevelStats(clubId) → MemberStats[]
+  ↓
+AllTimeStatisticsTab (rendering)
+  - Applies sorting and filtering
+  - Displays all metrics in UI
+  ↓
+statisticsExportService (on export)
+  - Generates CSV with currency symbols
+  - Saves locally to /PenaltyPro/StatisticsExports/
+  - Optionally shares via intent
+```
+
+---
+
+## G. Database Queries
+
+### Club-Level Statistics
+
+```sql
+-- Get club currency
+SELECT currency FROM Club WHERE id = ?
+
+-- Get total playtime and winners data
+SELECT id, startTime, endTime, winners FROM Session 
+WHERE clubId = ? AND status = 'finished'
+
+-- Get all session logs for aggregation
+SELECT * FROM SessionLog 
+WHERE clubId = ? 
+ORDER BY timestamp ASC
+```
+
+**Log Processing:**
+- system=11: Extract `extra` field (JSON) = `{ memberId: amount }` for total amounts
+- system=12: Extract `extra` field (JSON) = `{ memberId: { penaltyId: count } }` for commit aggregations
+- system=15: Extract `extra.playtime` for member playtimes
+- Session.winners: Parse JSON = `{ penaltyId: winnerId }` or `{ penaltyId: [winnerId] }` for win counts
+
+**Win Count Processing:**
+```
+For each Session with winners field:
+  Parse winners as JSON
+  For each penaltyId: winnerId in winners:
+    Increment winCountsByPenalty[penaltyId][winnerId]
+```
+
+### Member-Level Statistics
+
+```sql
+-- Get all member logs
+SELECT * FROM SessionLog 
+WHERE clubId = ? 
+ORDER BY timestamp ASC
+
+-- Count total sessions
+SELECT COUNT(DISTINCT id) as count 
+FROM Session 
+WHERE clubId = ? AND status = 'finished'
+```
+
+**System Log Format Reference:**
+
+```typescript
+// system=11: Final amounts per session
+{
+  sessionId: string,
+  clubId: string,
+  system: 11,
+  timestamp: ISO string,
+  extra: { memberId: amount, ... }  // All members' final amounts
+}
+
+// system=12: Commit summary per session
+{
+  sessionId: string,
+  clubId: string,
+  system: 12,
+  timestamp: ISO string,
+  extra: { memberId: { penaltyId: count, ... }, ... }  // All member-penalty commits
+}
+
+// system=15: Member playtime per session (one per member)
+{
+  sessionId: string,
+  clubId: string,
+  memberId: string,
+  system: 15,
+  timestamp: ISO string,
+  extra: { playtime: seconds }  // Individual member's playtime
+}
+```
+
+---
+
+## H. Testing Checklist
+
+### Club-Level Tab
+- [ ] Total Amount displays with currency (e.g., "€240.00") **and is visually prominent** (larger, bold)
+- [ ] Total Playtime displays in h:m format (e.g., "4h 15m") **and is visually prominent** (larger, bold)
+- [ ] Total Commits is **NOT displayed** anywhere at club level
+- [ ] No penalty filter chips visible
+- [ ] Commits by Penalty table shows all penalties
+- [ ] Commits table sortable by name and count
+- [ ] Commits table sortable ascending/descending
+- [ ] **Top Winners shows win count (e.g., "3 wins"), NOT commit count**
+- [ ] **Top Winners includes all penalties that have been won** (not just title penalties)
+- [ ] **Commit Matrix has penalty header row** showing all penalty names
+- [ ] Commit Matrix displays with green cells (commits > 0) and gray cells (0)
+- [ ] Commit Matrix X-axis = penalties, Y-axis = members
+- [ ] CSV export generates file with all data
+- [ ] CSV export shows "Wins" column for Top Winners, not "Commits"
+- [ ] CSV export does NOT include Total Commits in Summary section
+- [ ] Currency symbols present in CSV export
+
+### Member-Level Tab
+- [ ] Member filter chips visible for all members
+- [ ] Member cards display all 3 metrics (Amount, Playtime, Attendance)
+- [ ] Total Amount displays with currency
+- [ ] **Playtime calculated from system=15 logs** (verify in console)
+- [ ] Playtime displays in h:m format
+- [ ] Attendance displays sessions + percentage
+- [ ] Member filter chips toggle selection
+- [ ] Filtered members display correctly
+- [ ] Sortable by Amount, Playtime, Attendance, Name
+- [ ] Sortable ascending/descending for all keys
+- [ ] CSV export generates file with all member data
+- [ ] Currency symbols present in CSV export
+
+### General
+- [ ] No "Text strings must be rendered within <Text>" errors in console
+- [ ] No compilation errors
+- [ ] All imports working correctly
+- [ ] **System=11 logs created at session end with correct format** `{ memberId: amount }`
+- [ ] **System=12 logs created at session end with correct format** `{ memberId: { penaltyId: count } }`
+- [ ] **System=15 logs created for each member at session end** with `extra.playtime`
+- [ ] **Session.winners field populated** with `{ penaltyId: winnerId }` format
+- [ ] Service aggregations correct (totals match manual calculation)
+- [ ] **Console logs show correct data loading** (check for system=11/12/15 log counts)
+
+---
+
+## I. Implementation Status
+
+| Component | Status | Lines | Errors |
+|-----------|--------|-------|--------|
+| AllTimeStatisticsTab.tsx | ✅ Complete | 840 | 0 |
+| allTimeStatisticsService.ts | ✅ Complete | 305 | 0 |
+| statisticsExportService.ts | ✅ Complete | 190 | 0 |
+
+**Overall:** ✅ FULLY IMPLEMENTED & READY FOR TESTING
 
 10.2 Tab 2 — Cross-Session Analysis (Time-Range Based)
 

@@ -428,6 +428,10 @@ export async function generateFinalSummaryLogs(
 ): Promise<void> {
   const now = new Date().toISOString();
 
+  // CENTRALIZED SUMMARY LOGS (system 11–15)
+  // system=15 is emitted here to guarantee it is created together with 11–14
+  // in the same call and sequence at session end.
+
   // system=11: FinalTotals { memberId: amount }
   await createLog({
     sessionId,
@@ -488,6 +492,33 @@ export async function generateFinalSummaryLogs(
     timestamp: now,
     extra: playerSummary,
   });
+
+  // system=15: MemberPlaytime — one log per member (no aggregate)
+  // Calculate each member's playtime from first system=1 (join) to now (finalization time).
+  // Note: session.endTime is not yet set; it will be set by lockSession() afterwards.
+  const sessionEndMs = new Date(now).getTime();
+
+  // Build first-join map from existing logs (system=1)
+  const firstJoinByMember: Record<string, number> = {};
+  for (const l of logs) {
+    if (l.system === 1 && l.memberId && firstJoinByMember[l.memberId] === undefined) {
+      firstJoinByMember[l.memberId] = new Date(l.timestamp).getTime();
+    }
+  }
+
+  // Emit one system=15 per active member
+  for (const memberId of session.activePlayers || []) {
+    const joinMs = firstJoinByMember[memberId] ?? new Date(session.startTime).getTime();
+    const playtimeSeconds = Math.max(0, Math.floor((sessionEndMs - joinMs) / 1000));
+    await createLog({
+      sessionId,
+      clubId,
+      memberId,
+      system: 15,
+      timestamp: now,
+      extra: { playtime: playtimeSeconds },
+    });
+  }
 }
 
 /**

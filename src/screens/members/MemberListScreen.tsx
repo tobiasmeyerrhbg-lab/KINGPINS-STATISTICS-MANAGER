@@ -29,6 +29,8 @@ export default function MemberListScreen() {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
+  // UPDATED: Demo Loader - track if demo members were loaded to hide button
+  const [demoLoaded, setDemoLoaded] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -59,7 +61,7 @@ export default function MemberListScreen() {
     (navigation as any).navigate('MemberCreate', { clubId });
   };
 
-  // NEW: Demo Loader - Load Demo Members
+  // UPDATED: Demo Loader - Load Demo Members (einmalig, dann Button ausblenden)
   const handleLoadDemoMembers = async () => {
     try {
       setLoading(true);
@@ -85,8 +87,9 @@ export default function MemberListScreen() {
         isGuest: true,
       });
 
-      // Reload members
+      // Reload members and hide button
       await loadMembers();
+      setDemoLoaded(true);
     } catch (error) {
       console.error('Error loading demo members:', error);
       alert('Failed to load demo members');
@@ -139,15 +142,17 @@ export default function MemberListScreen() {
 
   return (
     <View style={styles.container}>
-      {/* NEW: Demo Loader Button */}
-      <View style={styles.headerContainer}>
-        <TouchableOpacity
-          style={styles.demoButton}
-          onPress={handleLoadDemoMembers}
-        >
-          <Text style={styles.demoButtonText}>Load Demo-Members</Text>
-        </TouchableOpacity>
-      </View>
+      {/* UPDATED: Demo Loader Button (ausgeblendet nach Verwendung) */}
+      {!demoLoaded && (
+        <View style={styles.headerContainer}>
+          <TouchableOpacity
+            style={styles.demoButton}
+            onPress={handleLoadDemoMembers}
+          >
+            <Text style={styles.demoButtonText}>Load Demo-Members</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       
       <FlatList
         data={members}

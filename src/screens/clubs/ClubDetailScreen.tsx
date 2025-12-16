@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
   actionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#007AFF',
+    color: '#000000',
   },
   actionSubtitle: {
     fontSize: 13,

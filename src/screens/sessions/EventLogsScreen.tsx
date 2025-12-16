@@ -64,6 +64,15 @@ const EventLogsScreen = ({ route }: Props) => {
     return penaltyNameById[id] || id.slice(0, 8);
   };
 
+  const formatPlaytime = (milliseconds?: number) => {
+    if (!milliseconds || milliseconds <= 0) return '0m';
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
   const parseMultiplierChange = (log: SessionLog) => {
     const note = log.note || '';
     const match = note.match(/from\s+(\d+(?:\.\d+)?)\s+to\s+(\d+(?:\.\d+)?)/i);
@@ -221,6 +230,25 @@ const EventLogsScreen = ({ route }: Props) => {
             <Text style={styles.tag}>{labels[item.system] || `System ${item.system}`}</Text>
           </View>
           <Text style={styles.bodyTextMono}>{extraData}</Text>
+        </View>
+      );
+    }
+
+    if (item.system === 15) {
+      // System 15: Individual member playtime log (one log per member, playtime in seconds)
+      const playtimeSeconds = item.extra?.playtime || 0;
+      const memberName = getMemberName(item.memberId || '');
+
+      return (
+        <View style={styles.logCard}>
+          <View style={styles.logHeader}>
+            <Text style={styles.time}>{time}</Text>
+            <Text style={styles.tag}>Member Playtime</Text>
+          </View>
+          <View style={styles.rowLine}>
+            <Text style={styles.bodyText}>{memberName}</Text>
+            <Text style={styles.bodyText}>{formatPlaytime(playtimeSeconds * 1000)}</Text>
+          </View>
         </View>
       );
     }

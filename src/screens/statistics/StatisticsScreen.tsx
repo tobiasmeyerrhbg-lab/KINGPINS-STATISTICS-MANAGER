@@ -3,7 +3,9 @@ import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
 // Using bottom tabs for consistency with existing MainTabNavigator
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useRoute } from '@react-navigation/native';
+import AllTimeStatisticsTabImpl from './AllTimeStatisticsTab';
 import SessionAnalysisTabImpl from './SessionAnalysisTab';
+import GlobalExportsTabImpl from './GlobalExportsTab';
 
 const Tab = createBottomTabNavigator();
 
@@ -16,8 +18,9 @@ function Placeholder({ title }: { title: string }) {
   );
 }
 
-function AllTimeTab() {
-  return <Placeholder title="All-Time Statistics" />;
+function AllTimeTabWrapper(props: any) {
+  const clubId = props.route?.params?.clubId || '';
+  return <AllTimeStatisticsTabImpl clubId={clubId} />;
 }
 
 function CrossSessionTab() {
@@ -29,8 +32,9 @@ function SessionAnalysisTabWrapper(props: any) {
   return <SessionAnalysisTabImpl clubId={clubId} />;
 }
 
-function ExportsTab() {
-  return <Placeholder title="Exports" />;
+function GlobalExportsTabWrapper(props: any) {
+  const clubId = props.route?.params?.clubId || '';
+  return <GlobalExportsTabImpl clubId={clubId} />;
 }
 
 export default function StatisticsScreen() {
@@ -57,14 +61,14 @@ export default function StatisticsScreen() {
             },
           })}
         >
-          <Tab.Screen name="All-Time" component={AllTimeTab} />
+          <Tab.Screen name="All-Time" component={AllTimeTabWrapper} initialParams={{ clubId }} />
           <Tab.Screen name="Cross-Session" component={CrossSessionTab} />
           <Tab.Screen
             name="Session Analysis"
             component={SessionAnalysisTabWrapper}
             initialParams={{ clubId }}
           />
-          <Tab.Screen name="Exports" component={ExportsTab} />
+          <Tab.Screen name="Exports" component={GlobalExportsTabWrapper} initialParams={{ clubId }} />
         </Tab.Navigator>
       </View>
     </SafeAreaView>
@@ -79,7 +83,7 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1e293b',
+    color: '#000000',
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 8,
@@ -97,12 +101,12 @@ const styles = StyleSheet.create({
   placeholderTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#334155',
+    color: '#000000',
     marginBottom: 8,
   },
   placeholderText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#64748b',
+    color: '#000000',
   },
 });

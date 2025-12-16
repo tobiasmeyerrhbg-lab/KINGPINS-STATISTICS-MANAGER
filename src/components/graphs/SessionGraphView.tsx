@@ -13,6 +13,7 @@ interface Props {
   penaltyName?: string;
   timeFormat?: string;
   timezone?: string;
+  clubMaxMultiplier?: number;
   titleOffset?: number; // vertical space consumed by fullscreen top bar
 }
 
@@ -74,8 +75,34 @@ function formatTooltipTime(timestamp: number, timezone: string, timeFormat: stri
   }
 }
 
+/**
+ * Interpolate color from light orange to red based on multiplier value
+ * @param multiplier - Current multiplier value
+ * @param maxMultiplier - Maximum multiplier for the club
+ * @returns Hex color string
+ */
+function getMultiplierBandColor(multiplier: number, maxMultiplier: number): string {
+  if (multiplier <= 1) {
+    return '#ffffff'; // No color for 1x multiplier
+  }
+  
+  const maxMult = Math.max(maxMultiplier, 2);
+  const ratio = Math.min((multiplier - 1) / (maxMult - 1), 1); // Clamp to [0, 1]
+  
+  // Light orange to red gradient
+  const startR = 255, startG = 169, startB = 77;   // #FFA94D (light orange)
+  const endR = 224, endG = 49, endB = 49;          // #E03131 (red)
+  
+  const r = Math.round(startR + (endR - startR) * ratio);
+  const g = Math.round(startG + (endG - startG) * ratio);
+  const b = Math.round(startB + (endB - startB) * ratio);
+  
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+}
 
-export default function SessionGraphView({ config, result, members = [], fullscreen = false, onRequestFullscreen, onExport, currency, penaltyName, timeFormat = 'HH:mm', timezone = 'UTC', titleOffset = 0 }: Props) {
+
+
+export default function SessionGraphView({ config, result, members = [], fullscreen = false, onRequestFullscreen, onExport, currency, penaltyName, timeFormat = 'HH:mm', timezone = 'UTC', clubMaxMultiplier = 10, titleOffset = 0 }: Props) {
   const [dimensions, setDimensions] = useState(() => ({
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,
@@ -276,7 +303,8 @@ export default function SessionGraphView({ config, result, members = [], fullscr
             result.bands.map((band, idx) => {
               const x = xScale(band.startX);
               const w = xScale(band.endX) - x;
-              const opacity = Math.min(0.1 + band.multiplier * 0.05, 0.3);
+              const bandColor = getMultiplierBandColor(band.multiplier, clubMaxMultiplier);
+              const opacity = Math.min(0.15 + band.multiplier * 0.06, 0.35);
               return (
                 <View
                   key={`band-${idx}`}
@@ -288,6 +316,7 @@ export default function SessionGraphView({ config, result, members = [], fullscr
                       width: w,
                       height: graphHeight,
                       opacity,
+                      backgroundColor: bandColor,
                     },
                   ]}
                 />
@@ -448,20 +477,23 @@ export default function SessionGraphView({ config, result, members = [], fullscr
 
       {tooltip && (
         <Pressable style={styles.tooltipOverlay} onPress={() => setTooltip(null)}>
-          <View style={[styles.tooltipCard, { left: Math.max(8, Math.min(tooltip.x, chartWidth - 200)), top: Math.max(8, tooltip.y - 100) }]}>
-            <Text style={styles.tooltipTitle}>{formatTooltipTime(tooltip.point.timestamp ?? (result.sessionStart + (tooltip.point.x ?? 0)), timezone, timeFormat)}</Text>
-            <View style={styles.tooltipRow}>
-              <View style={[styles.legendColor, { backgroundColor: tooltip.seriesColor, marginRight: 6 }]} />
-              <Text style={styles.tooltipText}>{tooltip.point.penaltyName || 'Penalty'}</Text>
-            </View>
-            <View style={styles.tooltipRow}>
+          <View style={[styles.tooltipCard, { left: Math.max(8, Math.min(tooltip.x, chartWidth - 200)), top: Math.max(8, tooltip.y - 120) }]}>
+            <View style={styles.tooltipMemberCenter}>
               <Image
                 source={tooltip.point.memberId && memberMap[tooltip.point.memberId]?.image ? { uri: memberMap[tooltip.point.memberId].image } : DUMMY_IMAGE}
-                style={styles.tooltipImage}
+                style={styles.tooltipMemberImage}
               />
-              <Text style={styles.tooltipText}>{tooltip.point.memberName || 'Member'}</Text>
+              <Text style={styles.tooltipMemberName}>{tooltip.point.memberName || 'Member'}</Text>
             </View>
-            <Text style={styles.tooltipText}>Amount Total: {tooltip.point.amountTotal ?? tooltip.point.amountApplied ?? tooltip.point.y}</Text>
+
+            <Text style={styles.tooltipTimestamp}>
+              {formatTooltipTime(tooltip.point.timestamp ?? (result.sessionStart + (tooltip.point.x ?? 0)), timezone, timeFormat)}
+            </Text>
+            <Text style={styles.tooltipLabel}>{tooltip.point.penaltyName || 'Penalty'}</Text>
+            {tooltip.point.multiplier && tooltip.point.multiplier > 1 ? (
+              <Text style={styles.tooltipLabel}>Multiplier: x{tooltip.point.multiplier}</Text>
+            ) : null}
+            <Text style={styles.tooltipAmount}>Amount Total: {tooltip.point.amountTotal ?? tooltip.point.amountApplied ?? tooltip.point.y}</Text>
           </View>
         </Pressable>
       )}
@@ -474,7 +506,7 @@ const styles = StyleSheet.create({
   chartTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#1e293b',
+    color: '#000000',
     marginBottom: 8,
   },
   chart: {
@@ -525,7 +557,7 @@ const styles = StyleSheet.create({
   axisLabel: {
     position: 'absolute',
     fontSize: 10,
-    color: '#64748b',
+    color: '#000000',
     fontWeight: '500',
   },
   legend: {
@@ -571,7 +603,7 @@ const styles = StyleSheet.create({
   },
   legendLabel: {
     fontSize: 12,
-    color: '#334155',
+    color: '#000000',
     fontWeight: '600',
   },
   tooltipOverlay: {
@@ -583,35 +615,49 @@ const styles = StyleSheet.create({
   },
   tooltipCard: {
     position: 'absolute',
-    width: 180,
-    backgroundColor: '#0f172a',
-    padding: 10,
-    borderRadius: 8,
+    width: 210,
+    backgroundColor: '#ffffff',
+    padding: 12,
+    borderRadius: 10,
     shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  tooltipTitle: {
-    color: '#e2e8f0',
-    fontWeight: '700',
-    marginBottom: 6,
-    fontSize: 12,
-  },
-  tooltipRow: {
-    flexDirection: 'row',
+  tooltipMemberCenter: {
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  tooltipText: {
-    color: '#cbd5e1',
+  tooltipMemberImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    marginBottom: 6,
+    backgroundColor: '#e2e8f0',
+  },
+  tooltipMemberName: {
+    color: '#000000',
+    fontWeight: '700',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  tooltipTimestamp: {
+    color: '#000000',
     fontSize: 12,
+    marginBottom: 6,
+    textAlign: 'left',
   },
-  tooltipImage: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginRight: 8,
+  tooltipLabel: {
+    color: '#000000',
+    fontSize: 12,
+    marginBottom: 6,
+    textAlign: 'left',
+  },
+  tooltipAmount: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'left',
   },
   headerRow: {
     flexDirection: 'row',
@@ -631,7 +677,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   actionText: {
-    color: '#fff',
+    color: '#ffffff',
     fontSize: 12,
   },
 });

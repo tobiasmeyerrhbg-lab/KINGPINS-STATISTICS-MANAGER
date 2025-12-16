@@ -4,14 +4,10 @@ import { getSession, Session } from '../../services/sessionService';
 import { getMembersByClub, Member } from '../../services/memberService';
 import { getPenaltiesByClub, Penalty } from '../../services/penaltyService';
 import { getCommitSummary, getCommitSummaryWithMultipliers } from '../../services/sessionLogService';
+import { formatCommitCountWithMultipliers, type CommitDetail } from '../../utils/commitFormatter';
 
 interface Props {
   route: { params: { sessionId: string; clubId: string } };
-}
-
-interface CommitDetail {
-  total: number;
-  byMultiplier: Record<number, number>;
 }
 
 // View-only snapshot of commit counts per member/penalty for the session.
@@ -60,24 +56,10 @@ const SessionTableScreen = ({ route }: Props) => {
     return commitSummary[memberId]?.[penaltyId] ?? null;
   };
 
-  // session-table: format commit count with multiplier breakdown (same as active table)
+  // session-table: format commit count with multiplier breakdown (shared formatter)
   const formatCommitDisplay = useCallback((detail: CommitDetail | null): string => {
-    if (!detail || detail.total === 0) return '0';
-    
-    const multKeys = Object.keys(detail.byMultiplier).filter(k => detail.byMultiplier[Number(k)] !== 0);
-    if (multKeys.length === 0) return String(detail.total);
-    if (multKeys.length === 1 && Number(multKeys[0]) === 1) return String(detail.total);
-
-    const parts = multKeys
-      .map(k => {
-        const mult = Number(k);
-        const count = detail.byMultiplier[mult];
-        return mult === 1 ? null : `${count} × ${mult}x`;
-      })
-      .filter(Boolean);
-
-    if (parts.length === 0) return String(detail.total);
-    return `${detail.total} (${parts.join(', ')})`;
+    if (!detail) return '0';
+    return formatCommitCountWithMultipliers(detail);
   }, []);
 
   // session-table: format penalty amount header (same logic as active table)
@@ -288,7 +270,6 @@ const styles = StyleSheet.create({
     width: 100,
     minWidth: 100,
     maxWidth: 100,
-    backgroundColor: '#fef3c7',
     borderRightWidth: 0,
   },
   // Body rows
@@ -308,20 +289,20 @@ const styles = StyleSheet.create({
   memberText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1e293b',
+    color: '#000000',
     textAlign: 'left',
   },
   countText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#334155',
+    color: '#000000',
     textAlign: 'center',
     lineHeight: 18,
   },
   totalText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#059669',
+    color: '#000000',
     textAlign: 'center',
   },
   // Footer row
@@ -351,7 +332,7 @@ const styles = StyleSheet.create({
   footerTotalText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#fbbf24',
+    color: '#e2e8f0',
     textAlign: 'center',
   },
 });

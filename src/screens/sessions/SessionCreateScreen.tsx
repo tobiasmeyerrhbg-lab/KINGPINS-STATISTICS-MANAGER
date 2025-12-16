@@ -29,6 +29,8 @@ export default function SessionCreateScreen() {
   const [isGuest, setIsGuest] = useState(false);
   const [creatingMember, setCreatingMember] = useState(false);
 
+  const canStart = selectedIds.length > 0 && penaltyCount > 0;
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -95,6 +97,7 @@ export default function SessionCreateScreen() {
   };
 
   const handleStart = async () => {
+    console.log('[SessionCreateScreen] Start button pressed');
     if (selectedIds.length === 0) {
       Alert.alert('Select members', 'Please select at least one member to start a session.');
       return;
@@ -106,17 +109,20 @@ export default function SessionCreateScreen() {
 
     try {
       setLoading(true);
+      console.log('[SessionCreateScreen] Starting session with members:', selectedIds);
       const session = await startSession({
         clubId,
         memberIds: selectedIds,
         initialMultiplier: 1, // per spec, always start at 1
       });
+      console.log('[SessionCreateScreen] Session created:', session.id);
       (navigation as any).navigate('SessionLive', {
         sessionId: session.id,
         clubId,
         clubName,
         maxMultiplier,
       });
+      console.log('[SessionCreateScreen] Navigation to SessionLive requested');
     } catch (err: any) {
       Alert.alert('Start failed', err.message || 'Could not start session');
     } finally {
@@ -201,9 +207,17 @@ export default function SessionCreateScreen() {
       />
 
       <View style={{ padding: 12, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e0e0e0' }}>
+        {!canStart && (
+          <Text style={{ color: '#ef4444', marginBottom: 8, textAlign: 'center' }}>
+            {selectedIds.length === 0
+              ? 'Select at least one member to start.'
+              : 'No active penalties found. Add/activate a penalty first.'}
+          </Text>
+        )}
         <TouchableOpacity
-          style={{ backgroundColor: '#007AFF', paddingVertical: 12, borderRadius: 10 }}
+          style={{ backgroundColor: canStart ? '#007AFF' : '#94a3b8', paddingVertical: 12, borderRadius: 10 }}
           onPress={handleStart}
+          disabled={!canStart}
         >
           <Text style={{ color: '#fff', textAlign: 'center', fontWeight: '700' }}>Start Session</Text>
         </TouchableOpacity>

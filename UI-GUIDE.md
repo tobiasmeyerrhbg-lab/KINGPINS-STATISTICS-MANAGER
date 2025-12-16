@@ -291,6 +291,52 @@ Every AI agent or developer must update this file whenever new UI elements are c
 
 ---
 
+## 9.a Photos & Logos — Camera/Gallery Integration (2025-12-16)
+
+Purpose:
+- Enable users to attach images via camera or gallery for Clubs (Logo) and Members (Photo).
+- Ensure selected images appear everywhere a placeholder/dummy was previously shown.
+
+User Entry Points:
+- Clubs: Button label “+ Pick Logo” or “Change Logo”
+- Members: Button label “+ Pick Photo” or “Change Photo”
+
+Behavior:
+- Tapping the button opens a prompt with options:
+  - Take Photo (camera)
+  - Choose from Library (gallery)
+- Images are downscaled and compressed (max ~512×512, quality ~0.8) to save storage.
+- Selected image URI is stored in the entity record and shown across the app.
+
+Files:
+- Service: `src/services/imagePickerService.ts` (shared camera/library prompt + compression)
+- Clubs: `src/screens/clubs/ClubCreateScreen.tsx`, `src/screens/clubs/ClubEditScreen.tsx`
+- Members: `src/screens/members/MemberCreateScreen.tsx`, `src/screens/members/MemberEditScreen.tsx`
+
+Storage Fields:
+- Club: `logoUri` (TEXT)
+- Member: `photoUri` (TEXT)
+
+Display Fallbacks:
+- If no URI stored: fallback dummy images remain (e.g., `assets/images/dummy/default-member.png`).
+
+Platform Notes:
+- Uses `react-native-image-picker` for camera/gallery access.
+- Android: ensure camera & external storage permissions are declared in `AndroidManifest.xml` if not already present.
+- iOS: ensure `NSCameraUsageDescription` and `NSPhotoLibraryUsageDescription` keys exist in `Info.plist`.
+
+Developer Usage (example):
+```ts
+import { pickImageWithPrompt } from '../../services/imagePickerService';
+const uri = await pickImageWithPrompt('photo');
+if (uri) setPhotoUri(uri);
+```
+
+Result:
+- “Pick Logo/Photo” now offers camera or gallery.
+- Images persist and render wherever `logoUri`/`photoUri` are used throughout the app.
+
+
 ## 1. Core Principles
 
 ### 1.1 Modularity  
