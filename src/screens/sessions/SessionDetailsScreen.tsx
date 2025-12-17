@@ -9,6 +9,8 @@ import {
   Image,
   TouchableOpacity,
   Alert,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,6 +21,7 @@ import { getPenaltiesByClub, Penalty } from '../../services/penaltyService';
 import { getCommitSummary } from '../../services/sessionLogService';
 import { exportSessionData, exportAndShareSessionData } from '../../services/sessionDetailsExportService';
 import { SessionStackParamList } from '../../navigation/SessionStackNavigator';
+import { loadGraphOptions, saveGraphOptions } from '../../services/graphOptionsService';
 
 interface Props {
   route: { params: { sessionId: string; clubId?: string } };
@@ -35,9 +38,16 @@ export function SessionDetailsScreen({ route }: Props) {
   const [resolvedClubId, setResolvedClubId] = useState<string | undefined>(clubId);
   // Commit counts now taken only from Commit Summary
   const [commitCounts, setCommitCounts] = useState<Record<string, Record<string, number>>>({});
+  // Penalty selection for winners display (reused from SessionAnalysisScreen pattern)
+  const [selectedPenaltyIds, setSelectedPenaltyIds] = useState<string[]>([]);
+  const [showSelectPenalties, setShowSelectPenalties] = useState(false);
+  // Winners section collapsible state (default: collapsed)
+  const [showWinners, setShowWinners] = useState(false);
+  // Secondary statistics actions are grouped under 'More Statistics' to reduce visual clutter.
+  const [showMoreStatistics, setShowMoreStatistics] = useState(false);
 
   const dummyAvatar = useMemo(
-    () => require('../../../assets/images/dummy/default-member.png'),
+    () => require('../../../assets/images/dummy/default_member.png'),
     []
   );
 
@@ -63,6 +73,15 @@ export function SessionDetailsScreen({ route }: Props) {
       setPenalties(clubPenalties);
       // Commit counts now taken only from Commit Summary
       setCommitCounts(calculatedCommits);
+      
+      // Load saved penalty selection defaults (single source of truth: graphOptionsService)
+      const graphOptions = await loadGraphOptions(actualClubId);
+      if (graphOptions && graphOptions.comparePenaltyIds) {
+        setSelectedPenaltyIds(graphOptions.comparePenaltyIds);
+      } else {
+        // Default: show all winners if no saved selection
+        setSelectedPenaltyIds(Object.keys(s.winners || {}));
+      }
     } catch (error: any) {
       console.error('Failed to load session details:', error);
     } finally {
@@ -209,29 +228,61 @@ export function SessionDetailsScreen({ route }: Props) {
         </View>
         {/* --- UPDATED SECTION END --- */}
 
-        {/* Title Winners */}
-        {/* --- UPDATED SECTION START --- Title Winners --- */}
+        {/* Winners */}
+        {/* --- UPDATED SECTION START --- Winners --- */}
         {session.winners && Object.keys(session.winners).length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Title Winners</Text>
-            {Object.entries(session.winners).map(([penaltyId, winnerIds]) => {
-              const winnerIdArray = Array.isArray(winnerIds) ? winnerIds : [winnerIds];
-              return (
-                <View key={penaltyId} style={styles.winnerCard}>
-                  <Text style={styles.penaltyName}>{getPenaltyName(penaltyId)}</Text>
-                  {winnerIdArray.map(id => {
-                    const commitCount = commitCounts[id]?.[penaltyId] || 0;
-                    return (
-                      <View key={id} style={styles.personRow}>
-                        <Image source={getMemberAvatar(id)} style={styles.avatarSmall} />
-                        <Text style={styles.winnerName}>{getMemberName(id)}</Text>
-                        <Text style={styles.winnerCommitCount}>({commitCount} commits)</Text>
+            <TouchableOpacity
+              style={styles.winnersHeader}
+              onPress={() => setShowWinners(!showWinners)}
+            >
+              <View style={styles.winnersHeaderContent}>
+                <Text style={styles.winnersTitle}>
+                  {showWinners ? '∨' : '>'} Winners
+                </Text>
+                {!showWinners && (
+                  <Text style={styles.winnersHint}>
+                    {Object.keys(session.winners).length} penalties
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity
+                style={styles.selectPenaltiesButton}
+                onPress={() => setShowSelectPenalties(true)}
+              >
+                <Text style={styles.selectPenaltiesButtonText}>Select Penalties</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+            {showWinners && (
+              <View>
+                {Object.entries(session.winners)
+                  .filter(([penaltyId]) => selectedPenaltyIds.includes(penaltyId))
+                  .map(([penaltyId, winnerIds]) => {
+                  const winnerIdArray = Array.isArray(winnerIds) ? winnerIds : [winnerIds];
+                  // Multiple winners supported: all tied leaders are included in the array
+                  const isTiedWin = winnerIdArray.length > 1;
+                  
+                  return (
+                    <View key={penaltyId} style={styles.winnerCard}>
+                      <View style={styles.penaltyNameRow}>
+                        <Text style={styles.penaltyName}>{getPenaltyName(penaltyId)}</Text>
+                        {isTiedWin && <Text style={styles.tiedLabel}>Tied for the lead</Text>}
                       </View>
-                    );
-                  })}
-                </View>
-              );
-            })}
+                      {winnerIdArray.map(id => {
+                        const commitCount = commitCounts[id]?.[penaltyId] || 0;
+                        return (
+                          <View key={id} style={styles.winnerPersonRow}>
+                            <Image source={getMemberAvatar(id)} style={styles.winnerAvatar} />
+                            <Text style={styles.winnerName}>{getMemberName(id)}</Text>
+                            <Text style={styles.winnerCommitCount}>({commitCount} commits)</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
         )}
         {/* --- UPDATED SECTION END --- */}
@@ -275,25 +326,49 @@ export function SessionDetailsScreen({ route }: Props) {
               
               // Commit counts now taken only from Commit Summary
               const memberCommitCounts = commitCounts[memberId] || {};
+              const memberTotal = session.totalAmounts?.[memberId] || 0;
               
               return (
-                <View key={memberId} style={styles.summaryCard}>
-                  <View style={styles.summaryCardHeader}>
-                    <Image source={getMemberAvatar(memberId)} style={styles.avatarSmall} />
-                    <Text style={styles.summaryMemberName}>{member.name}</Text>
+                <View key={memberId} style={styles.profileCard}>
+                  {/* Member Identity (Profile Header) - Centered */}
+                  <View style={styles.profileHeader}>
+                    <Image source={getMemberAvatar(memberId)} style={styles.profileAvatar} />
+                    <Text style={styles.profileName}>{member.name}</Text>
                   </View>
-                  <View style={styles.commitsGrid}>
+                  
+                  {/* Commit Breakdown (Secondary Details) */}
+                  <View style={styles.profileCommitsSection}>
                     {penalties
                       .filter(p => p.active)
                       .filter(p => (memberCommitCounts[p.id] || 0) > 0)
                       .map(penalty => (
-                        <View key={penalty.id} style={styles.commitItemRow}>
-                          <Text style={styles.commitLabel}>{penalty.name}:</Text>
-                          <Text style={styles.commitValue}>
+                        <View key={penalty.id} style={styles.profileCommitRow}>
+                          <Text style={styles.profileCommitLabel}>{penalty.name}:</Text>
+                          <Text style={styles.profileCommitValue}>
                             {memberCommitCounts[penalty.id] || 0}
                           </Text>
                         </View>
                       ))}
+                  </View>
+                  
+                  {/* Strong Divider */}
+                  <View style={styles.profileDivider} />
+                  
+                  {/* Total Amount (Emphasized Summary) */}
+                  <View style={styles.profileTotalSection}>
+                    <Text style={styles.profileTotalLabel}>Total Session Amount</Text>
+                    <Text
+                      style={[
+                        styles.profileTotalAmount,
+                        memberTotal < 0
+                          ? styles.sessionCredit
+                          : memberTotal > 0
+                            ? styles.sessionDebt
+                            : styles.sessionNeutral,
+                      ]}
+                    >
+                      {memberTotal.toFixed(2)}
+                    </Text>
                   </View>
                 </View>
               );
@@ -303,27 +378,83 @@ export function SessionDetailsScreen({ route }: Props) {
         {/* --- UPDATED SECTION END --- */}
 
         {/* --- UPDATED SECTION START --- Actions (bottom) --- */}
+        {/* Secondary statistics actions are grouped under 'More Statistics' to reduce visual clutter. */}
         <View style={styles.actionsGrid}>
-          <TouchableOpacity style={styles.actionButton} onPress={navigateToEventLogs}>
-            <Text style={styles.actionButtonText}>Event Logs</Text>
+          <TouchableOpacity 
+            style={styles.moreStatisticsButton} 
+            onPress={() => setShowMoreStatistics(!showMoreStatistics)}
+          >
+            <Text style={styles.actionButtonText}>
+              {showMoreStatistics ? '▼' : '▶'} More Statistics
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={navigateToSessionTable}>
-            <Text style={styles.actionButtonText}>Session Table</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={navigateToSessionAnalysis}>
-            <Text style={styles.actionButtonText}>Session Analysis</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={handleExportSessionData}>
-            <Text style={styles.actionButtonText}>📥 Export Data</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={handleShareSessionData}>
-            <Text style={styles.actionButtonText}>📤 Share Data</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={navigateToVerification}>
-            <Text style={styles.actionButtonText}>Verify Totals</Text>
-          </TouchableOpacity>
+          
+          {showMoreStatistics && (
+            <>
+              <TouchableOpacity style={styles.actionButton} onPress={navigateToEventLogs}>
+                <Text style={styles.actionButtonText}>Event Logs</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={navigateToSessionTable}>
+                <Text style={styles.actionButtonText}>Session Table</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={navigateToSessionAnalysis}>
+                <Text style={styles.actionButtonText}>Session Analysis</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={handleExportSessionData}>
+                <Text style={styles.actionButtonText}>📥 Export Data</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={handleShareSessionData}>
+                <Text style={styles.actionButtonText}>📤 Share Data</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={navigateToVerification}>
+                <Text style={styles.actionButtonText}>Verify Totals</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
         {/* --- UPDATED SECTION END --- */}
+
+        {/* Select Penalties Modal - Reused from SessionAnalysisScreen pattern */}
+        <Modal visible={showSelectPenalties} animationType="slide" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Winner Penalties</Text>
+                <TouchableOpacity onPress={() => setShowSelectPenalties(false)}>
+                  <Text style={styles.modalCloseText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={penalties}
+                keyExtractor={p => p.id}
+                renderItem={({ item: p }) => {
+                  const selected = selectedPenaltyIds.includes(p.id);
+                  return (
+                    <TouchableOpacity
+                      style={[styles.penaltyItem, selected && styles.penaltyItemSelected]}
+                      onPress={() => {
+                        setSelectedPenaltyIds(prev => selected ? prev.filter(id => id !== p.id) : [...prev, p.id]);
+                      }}
+                    >
+                      <Text style={styles.penaltyItemText}>{p.name}</Text>
+                      <Text style={styles.penaltyItemMeta}>{p.affect}</Text>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+              <TouchableOpacity
+                style={[styles.loadButton, { backgroundColor: '#3b82f6' }]}
+                onPress={async () => {
+                  // Persist penalty selection (single source of truth: graphOptionsService)
+                  await saveGraphOptions(resolvedClubId || clubId, { comparePenaltyIds: selectedPenaltyIds });
+                  setShowSelectPenalties(false);
+                }}
+              >
+                <Text style={styles.loadButtonText}>Save & Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
     </SafeAreaView>
   );
@@ -412,6 +543,16 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  moreStatisticsButton: {
+    backgroundColor: '#059669',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    shadowColor: '#059669',
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
   actionButtonText: {
     color: '#FFFFFF',
     fontWeight: '700',
@@ -429,6 +570,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 4,
   },
+  penaltyNameRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  tiedLabel: {
+    fontSize: 12,
+    color: '#F59E0B',
+    fontWeight: '600',
+    fontStyle: 'italic',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
   winnerName: {
     fontSize: 14,
     fontWeight: '600',
@@ -445,6 +602,18 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   avatarSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#e5e7eb',
+  },
+  winnerPersonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  winnerAvatar: {
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -476,44 +645,85 @@ const styles = StyleSheet.create({
   sessionNeutral: {
     color: '#64748B',
   },
-  summaryCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
+  // Profile Card Styles (Steckbrief design)
+  profileCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 16,
+    borderWidth: 2,
     borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  summaryCardHeader: {
-    flexDirection: 'row',
+  // Member Identity Section (Dominant)
+  profileHeader: {
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
+    marginBottom: 20,
   },
-  summaryMemberName: {
-    fontSize: 16,
-    fontWeight: '700',
+  profileAvatar: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#E5E7EB',
+    marginBottom: 12,
+    borderWidth: 3,
+    borderColor: '#3B82F6',
+  },
+  profileName: {
+    fontSize: 24,
+    fontWeight: '800',
     color: '#0F172A',
+    textAlign: 'center',
   },
-  commitsGrid: {
-    marginTop: 10,
+  // Commit Breakdown Section (Secondary)
+  profileCommitsSection: {
+    marginBottom: 16,
   },
-  commitItemRow: {
+  profileCommitRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#F1F5F9',
   },
-  commitLabel: {
+  profileCommitLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#000000',
+    color: '#64748B',
   },
-  commitValue: {
+  profileCommitValue: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#000000',
+    fontWeight: '600',
+    color: '#334155',
+  },
+  // Strong Divider
+  profileDivider: {
+    height: 4,
+    backgroundColor: '#CBD5E1',
+    marginVertical: 16,
+    borderRadius: 2,
+  },
+  // Total Amount Section (Emphasized)
+  profileTotalSection: {
+    alignItems: 'center',
+    paddingTop: 8,
+  },
+  profileTotalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  profileTotalAmount: {
+    fontSize: 32,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   summaryDetails: {
     flexDirection: 'row',
@@ -534,6 +744,111 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     marginTop: 40,
+  },
+  // Winners header with Select Penalties button - Redesigned
+  winnersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  winnersHeaderContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  winnersTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  winnersHint: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  selectPenaltiesButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: '#3b82f6',
+  },
+  selectPenaltiesButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  // Modal styles (reused from SessionAnalysisScreen pattern)
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', 
+    justifyContent: 'flex-end' 
+  },
+  modalContent: { 
+    backgroundColor: '#ffffff', 
+    borderTopLeftRadius: 16, 
+    borderTopRightRadius: 16, 
+    paddingHorizontal: 16, 
+    paddingTop: 16, 
+    maxHeight: '80%' 
+  },
+  modalHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 16 
+  },
+  modalTitle: { 
+    fontSize: 18, 
+    fontWeight: '700', 
+    color: '#1e293b' 
+  },
+  modalCloseText: { 
+    fontSize: 14, 
+    color: '#3b82f6', 
+    fontWeight: '600' 
+  },
+  penaltyItem: { 
+    paddingVertical: 12, 
+    paddingHorizontal: 8, 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#e2e8f0' 
+  },
+  penaltyItemSelected: { 
+    backgroundColor: '#dbeafe' 
+  },
+  penaltyItemText: { 
+    fontSize: 14, 
+    fontWeight: '600', 
+    color: '#1e293b' 
+  },
+  penaltyItemMeta: { 
+    fontSize: 12, 
+    color: '#64748b', 
+    marginTop: 4 
+  },
+  loadButton: { 
+    paddingVertical: 12, 
+    paddingHorizontal: 16, 
+    borderRadius: 8, 
+    alignItems: 'center' 
+  },
+  loadButtonText: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: '#ffffff' 
   },
 });
 

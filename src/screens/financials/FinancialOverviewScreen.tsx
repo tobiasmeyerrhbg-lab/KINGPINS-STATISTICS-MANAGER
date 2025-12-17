@@ -82,7 +82,7 @@ export default function FinancialOverviewScreen({ route }) {
             }}
           >
             <Image 
-              source={item.photoUri ? { uri: item.photoUri } : require('../../../assets/images/dummy/default-member.png')} 
+              source={item.photoUri ? { uri: item.photoUri } : require('../../../assets/images/dummy/default_member.png')} 
               style={styles.avatar} 
             />
             <View style={{ flex: 1 }}>

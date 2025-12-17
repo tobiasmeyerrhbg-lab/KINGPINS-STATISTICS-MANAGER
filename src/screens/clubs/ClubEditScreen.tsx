@@ -284,9 +284,9 @@ export default function ClubEditScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Default Graphs Section */}
+        {/* Default Penalties to Show Section */}
         <View style={styles.sectionDivider} />
-        <Text style={styles.sectionTitle}>Default Graphs</Text>
+        <Text style={styles.sectionTitle}>Default Penalties to Show</Text>
         <Text style={styles.sectionDescription}>
           Select which penalties should be displayed as comparison graphs by default in the Session Analysis screen.
         </Text>
@@ -310,10 +310,10 @@ export default function ClubEditScreen() {
           style={[styles.button, styles.saveButton]}
           onPress={async () => {
             await saveGraphOptions(clubId, { comparePenaltyIds: defaultComparePenaltyIds });
-            Alert.alert('Saved', 'Default graphs updated successfully');
+            Alert.alert('Saved', 'Default penalties to show updated successfully');
           }}
         >
-          <Text style={styles.saveButtonText}>Save Default Graphs</Text>
+          <Text style={styles.saveButtonText}>Save Default Penalties</Text>
         </TouchableOpacity>
 
         {/* Delete Club - moved to bottom */}

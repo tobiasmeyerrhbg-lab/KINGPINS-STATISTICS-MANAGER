@@ -210,7 +210,7 @@ export default function FinancialsScreen() {
           <Image source={{ uri: item.photoUri }} style={styles.memberPhoto} />
         ) : (
           <Image
-            source={require('../../../assets/images/dummy/default-member.png')}
+            source={require('../../../assets/images/dummy/default_member.png')}
             style={styles.memberPhoto}
           />
         )}

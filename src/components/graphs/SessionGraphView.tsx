@@ -17,7 +17,7 @@ interface Props {
   titleOffset?: number; // vertical space consumed by fullscreen top bar
 }
 
-const DUMMY_IMAGE = require('../../../assets/images/dummy/default-member.png');
+const DUMMY_IMAGE = require('../../../assets/images/dummy/default_member.png');
 const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
 /**

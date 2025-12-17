@@ -107,7 +107,7 @@ export default function MemberListScreen() {
         <Image source={{ uri: item.photoUri }} style={styles.photo} />
       ) : (
         <Image
-          source={require('../../../assets/images/dummy/default-member.png')}
+          source={require('../../../assets/images/dummy/default_member.png')}
           style={styles.photo}
         />
       )}

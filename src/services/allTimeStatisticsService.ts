@@ -22,7 +22,7 @@ export interface ClubLevelStats {
   currency?: string;
   totalAmount: number;
   totalPlaytime: number; // in seconds
-  commitsByPenalty: Array<{ penaltyId: string; penaltyName: string; totalCommits: number }>;
+  commitsByPenalty: Array<{ penaltyId: string; penaltyName: string; totalCommits: number; totalAmount: number }>;
   topWinnersByPenalty: Array<{ 
     penaltyId: string; 
     penaltyName: string; 
@@ -76,6 +76,10 @@ export async function getClubLevelStats(clubId: string): Promise<ClubLevelStats>
     });
 
     // Count wins per penalty per member from Session.winners field
+    // Note: Non-title penalties support multiple winners (tied for the lead).
+    // Each member in the tied winner list receives credit for one win.
+    // Example: If Alice & Bob both won "Speed" penalty 3 times with ties,
+    // they each get credited 3 wins, not split 1.5 each.
     const winCountsByPenalty: Record<string, Record<string, number>> = {}; // penaltyId -> memberId -> win count
 
     for (const sessionRow of sessionsData as any[]) {
@@ -83,9 +87,11 @@ export async function getClubLevelStats(clubId: string): Promise<ClubLevelStats>
         try {
           const winnersData = JSON.parse(sessionRow.winners);
           // winnersData format: { penaltyId: [winnerId] } or { penaltyId: winnerId }
+          // Multiple winners per penalty are valid - iterate through all of them
           for (const [penaltyId, winnerValue] of Object.entries(winnersData)) {
-            // Handle both array and string formats
+            // Handle both array and string formats for backward compatibility
             const winnerIds = Array.isArray(winnerValue) ? winnerValue : [winnerValue];
+            // Each winner in a tie counts as one win - do not divide or limit
             for (const winnerId of winnerIds as string[]) {
               if (!winCountsByPenalty[penaltyId]) {
                 winCountsByPenalty[penaltyId] = {};
@@ -138,6 +144,7 @@ export async function getClubLevelStats(clubId: string): Promise<ClubLevelStats>
     // Aggregate data
     let totalAmount = 0;
     const commitsByPenaltyMap: Record<string, number> = {};
+    const amountsByPenaltyMap: Record<string, number> = {}; // For system=13 penalty summary
     const memberCommitsByPenalty: Record<string, Record<string, number>> = {}; // memberId -> penaltyId -> count
 
     // Process logs
@@ -171,9 +178,18 @@ export async function getClubLevelStats(clubId: string): Promise<ClubLevelStats>
           }
         }
       }
+
+      // System=13: Penalty summary (stored as { penaltyId: totalAmount } in extra)
+      if (log.system === 13 && log.extra) {
+        const penaltySummary = log.extra; // { penaltyId: totalAmount }
+        for (const [penaltyId, amount] of Object.entries(penaltySummary)) {
+          amountsByPenaltyMap[penaltyId] = (amountsByPenaltyMap[penaltyId] || 0) + Number(amount);
+          console.log('System=13 log penalty amount:', { penaltyId, amount, runningTotal: amountsByPenaltyMap[penaltyId] });
+        }
+      }
     }
 
-    console.log('Aggregated data - Total Amount:', totalAmount, 'Commits by Penalty:', commitsByPenaltyMap);
+    console.log('Aggregated data - Total Amount:', totalAmount, 'Commits by Penalty:', commitsByPenaltyMap, 'Amounts by Penalty:', amountsByPenaltyMap);
 
     // Build commits by penalty array
     const commitsByPenalty = await Promise.all(
@@ -186,6 +202,7 @@ export async function getClubLevelStats(clubId: string): Promise<ClubLevelStats>
           penaltyId,
           penaltyName: penaltyRow?.name || 'Unknown',
           totalCommits: count,
+          totalAmount: amountsByPenaltyMap[penaltyId] || 0,
         };
       })
     );
@@ -199,6 +216,10 @@ export async function getClubLevelStats(clubId: string): Promise<ClubLevelStats>
         );
 
         // Get top 3 winners for this penalty
+        // Note: If multiple people are tied at the top position, all tied winners are counted
+        // and each receives credit for their wins. Only the display is limited to top 3.
+        // If a user wants to see all winners (even beyond top 3), they should query
+        // Session.winners directly or use the fullscreen commit matrix.
         const sortedWinners = Object.entries(memberWins)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3);

@@ -55,7 +55,7 @@ export function SessionEndModals({
   const [titlesToResolve, setTitlesToResolve] = useState<TitleResolutionItem[]>([]);
   const [currentTitleIndex, setCurrentTitleIndex] = useState(0);
   const [selectedWinnerId, setSelectedWinnerId] = useState('');
-  const [resolvedWinners, setResolvedWinners] = useState<Record<string, string>>({});
+  const [resolvedWinners, setResolvedWinners] = useState<Record<string, string[]>>({});
 
   // Reward resolution
   const [rewardsToResolve, setRewardsToResolve] = useState<RewardResolutionItem[]>([]);
@@ -70,13 +70,26 @@ export function SessionEndModals({
     setIsProcessing(true);
     try {
       // Prepare title resolution
-      const { titlesToResolve: titles, autoResolvedWinners } = await prepareTitleResolution(
+      const { titlesToResolve: titles, autoResolvedWinners, nonTitleWinners } = await prepareTitleResolution(
         sessionId,
         clubId,
         memberMap
       );
 
-      setResolvedWinners(autoResolvedWinners);
+      // Combine title winners (single winner) and non-title winners (may be multiple)
+      const allWinners: Record<string, string[]> = {};
+      
+      // Add auto-resolved title winners
+      for (const [penaltyId, winnerId] of Object.entries(autoResolvedWinners)) {
+        allWinners[penaltyId] = [winnerId];
+      }
+      
+      // Add non-title winners (already as arrays)
+      for (const [penaltyId, winnerIds] of Object.entries(nonTitleWinners)) {
+        allWinners[penaltyId] = winnerIds;
+      }
+
+      setResolvedWinners(allWinners as any);
 
       if (titles.length > 0) {
         // Need user input for tied titles
@@ -86,7 +99,7 @@ export function SessionEndModals({
         setStep('titles');
       } else {
         // No ties, proceed to rewards
-        await proceedToRewards(autoResolvedWinners);
+        await proceedToRewards(allWinners);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to prepare finalization');
@@ -104,7 +117,7 @@ export function SessionEndModals({
     const currentTitle = titlesToResolve[currentTitleIndex];
     const newResolvedWinners = {
       ...resolvedWinners,
-      [currentTitle.penaltyId]: selectedWinnerId,
+      [currentTitle.penaltyId]: [selectedWinnerId], // Store as array for title penalties
     };
     setResolvedWinners(newResolvedWinners);
 
@@ -118,13 +131,21 @@ export function SessionEndModals({
     }
   };
 
-  const proceedToRewards = async (winners: Record<string, string>) => {
+  const proceedToRewards = async (winners: Record<string, string[]>) => {
     setIsProcessing(true);
     try {
+      // Convert array format to single winner for reward resolution (take first winner of each penalty)
+      const winnersForRewards: Record<string, string> = {};
+      for (const [penaltyId, winnerIds] of Object.entries(winners)) {
+        if (winnerIds.length > 0) {
+          winnersForRewards[penaltyId] = winnerIds[0];
+        }
+      }
+
       const { rewardsToResolve: rewards, autoRewards } = await prepareRewardResolution(
         sessionId,
         clubId,
-        winners,
+        winnersForRewards,
         memberMap
       );
 
@@ -175,7 +196,7 @@ export function SessionEndModals({
   };
 
   const performFinalization = async (
-    winners: Record<string, string>,
+    winners: Record<string, string[]>,
     rewards: Record<string, { winnerId: string; rewardValue: number }>
   ) => {
     setStep('finalizing');

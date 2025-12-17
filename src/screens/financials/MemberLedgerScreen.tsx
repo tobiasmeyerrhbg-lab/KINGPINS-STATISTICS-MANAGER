@@ -136,7 +136,7 @@ export default function MemberLedgerScreen({ route }) {
   const [sessionNames, setSessionNames] = useState<Record<string, string>>({});
   const [refreshFlag, setRefreshFlag] = useState(0);
   const dummyAvatar = useMemo(
-    () => require('../../../assets/images/dummy/default-member.png'),
+    () => require('../../../assets/images/dummy/default_member.png'),
     []
   );
 

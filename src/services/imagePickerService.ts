@@ -1,39 +1,60 @@
 import { Alert, ActionSheetIOS, Platform } from 'react-native';
-import * as ImagePicker from 'react-native-image-picker';
+import * as ImagePicker from 'expo-image-picker';
 
 export type PickImageKind = 'photo' | 'logo';
 
-const pickerOptions: ImagePicker.ImageLibraryOptions & ImagePicker.CameraOptions = {
-  mediaType: 'photo',
-  maxWidth: 512,
-  maxHeight: 512,
-  quality: 0.8,
-  includeBase64: false,
-  selectionLimit: 1,
-};
-
 async function launchCamera(): Promise<string | undefined> {
-  return new Promise(resolve => {
-    ImagePicker.launchCamera(pickerOptions, response => {
-      if (response?.assets && response.assets[0]?.uri) {
-        resolve(response.assets[0].uri);
-      } else {
-        resolve(undefined);
-      }
+  try {
+    // Request camera permission
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Camera permission is required to take photos.');
+      return undefined;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
     });
-  });
+
+    if (!result.canceled && result.assets[0]) {
+      return result.assets[0].uri;
+    }
+    return undefined;
+  } catch (error) {
+    console.error('Camera error:', error);
+    Alert.alert('Error', 'Failed to launch camera. Please try again.');
+    return undefined;
+  }
 }
 
 async function launchLibrary(): Promise<string | undefined> {
-  return new Promise(resolve => {
-    ImagePicker.launchImageLibrary(pickerOptions, response => {
-      if (response?.assets && response.assets[0]?.uri) {
-        resolve(response.assets[0].uri);
-      } else {
-        resolve(undefined);
-      }
+  try {
+    // Request media library permission
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Media library permission is required to choose photos.');
+      return undefined;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
     });
-  });
+
+    if (!result.canceled && result.assets[0]) {
+      return result.assets[0].uri;
+    }
+    return undefined;
+  } catch (error) {
+    console.error('Library error:', error);
+    Alert.alert('Error', 'Failed to open media library. Please try again.');
+    return undefined;
+  }
 }
 
 export async function pickImageWithPrompt(kind: PickImageKind): Promise<string | undefined> {

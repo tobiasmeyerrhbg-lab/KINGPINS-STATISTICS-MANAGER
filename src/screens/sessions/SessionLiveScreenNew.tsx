@@ -479,6 +479,10 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
         } else {
           await negativeCommit(sessionId, memberId, penaltyId);
         }
+
+        // Reload logs immediately to update multiplier breakdowns in UI
+        const freshLogs = await getLogsBySession(sessionId);
+        setLogs(freshLogs);
       } catch (err: any) {
         Alert.alert('Error', err.message || 'Failed to create commit');
         // Reload data to recover state
@@ -683,7 +687,7 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
                     source={
                       member.photoUri
                         ? { uri: member.photoUri }
-                        : require('../../../assets/images/dummy/default-member.png')
+                        : require('../../../assets/images/dummy/default_member.png')
                     }
                     style={styles.avatar}
                   />

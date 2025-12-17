@@ -40,6 +40,109 @@ Navigation:
 Notes:
 - Favorites/presets remain available in Tab 3.
 - Works also when opened from SessionDetails → SessionAnalysis path (same screen & config).
+
+---
+
+## 9.b All-Time Statistics Tab (Tab 1) — Major Update (2025-12-16)
+
+### Overview
+Tab 1 now displays comprehensive all-time club statistics with a fullscreen commit matrix accessible via button, winner profiles with images, and member-level analytics.
+
+### Layout Structure
+
+**Club Level Section:**
+- Summary card: Total Amount + Total Playtime (prominent styling)
+- Commits by Penalty: Sortable table (sort by commit count or penalty name)
+- Top Winners by Penalty: Cards displaying rank, member photo, name, and win count
+- **Commit Matrix Access Card:** Prominent button card to open fullscreen matrix
+  - Shows matrix summary: "{X} members across {Y} penalties"
+  - "📲 View Fullscreen" button (primary, blue)
+  - "📥 Export CSV" button (secondary, outline)
+  - NO preview rendering - direct access to fullscreen modal only
+- Export button: Exports club-level statistics as CSV
+
+**Member Level Section:**
+- Filter by Members: Chip-based selection (toggle members on/off)
+- Sort Controls: Sort by Amount, Playtime, Attendance, or Name (ascending/descending)
+- Member Statistics: Each member displayed with avatar, stats (amount, playtime, attendance)
+
+### New Components
+
+#### MemberCommitProfile (Reusable Component)
+**File:** `src/components/MemberCommitProfile.tsx`
+
+**Purpose:** Displays a member's session profile with commits, totals, and optional extended metadata.
+
+**Props:**
+```typescript
+interface MemberCommitProfileProps {
+  memberId: string;
+  memberName: string;
+  photoUri?: string;
+  commits: CommitBreakdown[];
+  totalAmount?: number;
+  currency?: string;
+  playtime?: number;
+  attendancePercentage?: number;
+  variant?: 'compact' | 'extended';
+}
+```
+
+**Layout (both variants):**
+1. **Header:** Centered member avatar (56px) + large name (18pt, weight 700)
+2. **Extended Info (Tab 1 only):** Playtime + Attendance (light background section)
+3. **Commits Section:** Each penalty on its own line with count
+   - Multiplier breakdown shows as indented italic lines (e.g., "1 × 2x multiplier")
+4. **Thick Divider:** 3px dark line separating content from totals
+5. **Total Amount:** Label + amount (color-coded: red for positive/debt, green for negative/credit)
+
+**Variant Types:**
+- `compact` (SessionDetailsScreen): Shows image, name, commits, total amount only
+- `extended` (Tab 1 member profiles): Adds playtime + attendance below name
+
+**Styling:**
+- Container: white background, rounded corners, subtle border
+- Avatar: 56px circular with fallback to default_member.png
+- Name: Large, centered, prominent weight
+- Commits: Gap between blocks, italic multiplier lines
+- Divider: Dark, thick, emphasizes separation
+- Amount: 18pt bold, color-coded
+
+### Tab 1 Club Level Changes
+
+**Winner Images:**
+- Each winner now displays member photo (32px avatar) on the left
+- Photos use `photoUri` from member data, fallback to `default_member.png`
+- Layout: [Avatar] [Rank] [Name] [Win Count]
+- Spacing improved with flexbox gap
+
+**Commit Matrix Access Card:**
+- **Design:** Blue-bordered card with heading and two action buttons
+- **Header Text:** 
+  - Title: "📊 All-Time Commit Matrix" (18pt, blue, bold)
+  - Subtitle: "View detailed commit counts for all {X} members across {Y} penalties" (14pt, gray)
+- **Buttons (side by side):**
+  - "📲 View Fullscreen" — Primary button (blue background, white text, elevation shadow)
+  - "📥 Export CSV" — Secondary button (white background, blue outline and text)
+- **Modal Behavior:** 
+  - Tapping "View Fullscreen" opens fullscreen modal with complete scrollable matrix
+  - Modal shows all members × all penalties with member avatars and color-coded cells
+  - Fixed column widths (60px for penalty columns) ensure readability
+- **No Preview:** Card ONLY provides access via buttons - no embedded matrix preview
+
+### Integration with SessionDetailsScreen
+
+**Winner Display:**
+- Title Winners section now shows member avatars (32px) next to names
+- Same layout and spacing as Tab 1
+- Maintains color coding and commit counts
+
+### File Changes
+- **AllTimeStatisticsTab.tsx:** Winner section includes avatars; commit matrix replaced with access card (button-only, no preview)
+- **SessionDetailsScreen.tsx:** Winner section updated with avatars
+- **MemberCommitProfile.tsx:** New reusable component
+- **UI-GUIDE.md:** This section documents all changes
+
 # UI-GUIDE.md  
 PenaltyPro – UI Architecture & Component Registry
 ## 0. UI Overhaul — Visual Design System (2025-12-12)

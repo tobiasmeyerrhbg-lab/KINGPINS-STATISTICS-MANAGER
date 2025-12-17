@@ -120,7 +120,12 @@ export interface RewardResolutionItem {
 
 /**
  * Step 1: Analyze titles and determine which need user resolution
- * Returns list of titles requiring modal input (ties or no commits) and auto-resolved winners
+ * Also resolves winners for non-title penalties (automatic, no modal)
+ * 
+ * Returns:
+ * - titlesToResolve: Title penalties requiring user input (ties or no commits)
+ * - autoResolvedWinners: Winners for title penalties (auto-resolved)
+ * - nonTitleWinners: ALL tied leaders for non-title penalties (one system=2 log per winner)
  */
 export async function prepareTitleResolution(
   sessionId: string,
@@ -128,7 +133,8 @@ export async function prepareTitleResolution(
   memberMap: Record<string, string> // memberId → name
 ): Promise<{
   titlesToResolve: TitleResolutionItem[];
-  autoResolvedWinners: Record<string, string>; // penaltyId → winnerId
+  autoResolvedWinners: Record<string, string>; // penaltyId → winnerId (title penalties only)
+  nonTitleWinners: Record<string, string[]>; // penaltyId → [winnerId1, winnerId2, ...] (non-title penalties)
 }> {
   try {
     const [commitSummary, penalties, session] = await Promise.all([
@@ -137,11 +143,15 @@ export async function prepareTitleResolution(
       getSession(sessionId),
     ]);
 
-    const titlePenalties = penalties.filter(p => p.isTitle);
+    const titlePenalties = penalties.filter(p => p.isTitle && p.active);
+    const nonTitlePenalties = penalties.filter(p => !p.isTitle && p.active);
     const titlesToResolve: TitleResolutionItem[] = [];
     const autoResolvedWinners: Record<string, string> = {};
+    const nonTitleWinners: Record<string, string[]> = {};
     const activePlayers = session?.activePlayers || [];
+    const now = new Date().toISOString();
 
+    // ========== TITLE PENALTIES (unchanged logic) ==========
     for (const penalty of titlePenalties) {
       // Build counts for this penalty: memberId → commit count
       const countsForPenalty: Record<string, number> = {};
@@ -199,7 +209,60 @@ export async function prepareTitleResolution(
       }
     }
 
-    return { titlesToResolve, autoResolvedWinners };
+    // ========== NON-TITLE PENALTIES (new logic) ==========
+    // For each non-title penalty, identify ALL tied leaders and write system=2 logs
+    // Important: Multiple winners per penalty are valid and fully supported.
+    // All tied leaders are winners, not just the first one.
+    for (const penalty of nonTitlePenalties) {
+      // Build counts for this penalty: memberId → commit count
+      const countsForPenalty: Record<string, number> = {};
+
+      for (const [memberId, penaltyMap] of Object.entries(commitSummary)) {
+        const count = penaltyMap[penalty.id] || 0;
+        if (count > 0) {
+          countsForPenalty[memberId] = count;
+        }
+      }
+
+      const memberIds = Object.keys(countsForPenalty);
+      const winnersForPenalty: string[] = [];
+
+      if (memberIds.length === 0) {
+        // No commits - for non-title penalties, all active players are considered tied winners
+        // (equivalent to everyone tied for the lead at 0 commits)
+        if (activePlayers.length > 0) {
+          winnersForPenalty.push(...activePlayers);
+        }
+      } else {
+        // Find all members with max commits (all tied leaders are winners)
+        // Do NOT limit to just the first member - all tied leaders count as winners
+        const maxCount = Math.max(...Object.values(countsForPenalty));
+        const allLeaders = memberIds.filter(mid => countsForPenalty[mid] === maxCount);
+        winnersForPenalty.push(...allLeaders);
+      }
+
+      // Write system=2 logs for each winner
+      // Each winner in a tie must have their own system=2 log entry
+      // This ensures statistics and analytics reflect all winners accurately
+      for (const winnerId of winnersForPenalty) {
+        await createLog({
+          sessionId,
+          clubId,
+          memberId: winnerId,
+          penaltyId: penalty.id,
+          system: 2,
+          timestamp: now,
+          note: winnersForPenalty.length > 1 ? 'Winner (tied for lead)' : 'Winner',
+        });
+      }
+
+      // Store all winners for this penalty
+      // Session.winners array format: penaltyId -> [winnerId1, winnerId2, ...]
+      // All tied leaders are stored, not just the first or top one
+      nonTitleWinners[penalty.id] = winnersForPenalty;
+    }
+
+    return { titlesToResolve, autoResolvedWinners, nonTitleWinners };
   } catch (error) {
     throw new Error(`Failed to prepare title resolution: ${getErrorMessage(error)}`);
   }
@@ -606,7 +669,7 @@ export async function createSessionLedgerEntries(
  */
 export async function lockSession(
   sessionId: string,
-  winners: Record<string, string>, // penaltyId → winnerId
+  winners: Record<string, string[]>, // penaltyId → [winnerId1, winnerId2, ...] (both title and non-title)
   activePlayers: string[],
   startTime: string
 ): Promise<void> {
@@ -615,12 +678,11 @@ export async function lockSession(
     (new Date(now).getTime() - new Date(startTime).getTime()) / 1000
   );
 
-  // Convert winners to array format for storage (backwards compatibility)
-  const winnersForStorage: Record<string, string[]> = {};
-  for (const [penaltyId, winnerId] of Object.entries(winners)) {
-    winnersForStorage[penaltyId] = [winnerId];
-  }
-
+  // All non-title winners are stored as arrays without truncation.
+  // Multiple winners per penalty are fully supported:
+  // - Title penalties: single winner per penalty, stored as [winnerId]
+  // - Non-title penalties: all tied leaders stored as [winnerId1, winnerId2, ...]
+  // UI and statistics code must iterate through ALL winners, not assume first only.
   await db.executeSql(
     `UPDATE Session 
      SET endTime = ?, playingTimeSeconds = ?, playerCount = ?, status = ?, locked = ?, winners = ?, updatedAt = ? 
@@ -631,7 +693,7 @@ export async function lockSession(
       activePlayers.length,
       'finished',
       1,
-      JSON.stringify(winnersForStorage),
+      JSON.stringify(winners),
       now,
       sessionId,
     ]
@@ -645,7 +707,7 @@ export async function lockSession(
 export async function finalizeSessionComplete(
   sessionId: string,
   clubId: string,
-  allWinners: Record<string, string>, // penaltyId → winnerId
+  allWinners: Record<string, string[]>, // penaltyId → [winnerId1, winnerId2, ...] (both title and non-title)
   allRewards: Record<string, { winnerId: string; rewardValue: number }>
 ): Promise<void> {
   try {
@@ -667,13 +729,6 @@ export async function finalizeSessionComplete(
       memberMap[member.id] = member.name;
     }
 
-    // winner handling: ensure all winners (including non-title) are added
-    // Determine winners for non-title penalties
-    const nonTitleWinners = await determineNonTitleWinners(sessionId, clubId, memberMap);
-
-    // Combine all winners (title + non-title)
-    const combinedWinners = { ...allWinners, ...nonTitleWinners };
-
     // Apply rewards on top of recalculated totals
     const finalTotals = await applyRewards(
       sessionId,
@@ -681,10 +736,6 @@ export async function finalizeSessionComplete(
       allRewards,
       recalculatedTotals
     );
-
-    // system log 2: write a log for every winner (including multiple winners on non-title penalties)
-    // Log all winners (both title and non-title)
-    await logAllWinners(sessionId, clubId, allWinners, nonTitleWinners);
 
     // Generate summary logs
     await generateFinalSummaryLogs(sessionId, clubId, finalTotals, commitSummary, penalties, session);
@@ -704,7 +755,7 @@ export async function finalizeSessionComplete(
     await createSessionLedgerEntries(sessionId, clubId, session.activePlayers, finalTotals);
 
     // Lock session with all winners (title + non-title)
-    await lockSession(sessionId, combinedWinners, session.activePlayers, session.startTime);
+    await lockSession(sessionId, allWinners, session.activePlayers, session.startTime);
 
   } catch (error) {
     throw new Error(`Failed to finalize session: ${getErrorMessage(error)}`);
