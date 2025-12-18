@@ -85,7 +85,7 @@ When user presses **Start Session**:
    - `sessionId = session id`
    - `system = 1`
    - **Every time a player is added (including during a match), a system=1 log MUST be written**
-4. Open Active Session UI (SessionLiveScreen).
+4. Open Active Session UI (SessionLiveScreenNew).
 
 ---
 

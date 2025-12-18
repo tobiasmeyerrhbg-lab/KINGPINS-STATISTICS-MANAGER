@@ -37,6 +37,7 @@ export function SessionLiveScreen({ route, navigation }: Props) {
   const [commitCounts, setCommitCounts] = useState<Record<string, number>>({});
   const [currentMultiplier, setCurrentMultiplier] = useState<number>(1);
   const [tick, setTick] = useState<number>(0);
+  const [debugMode, setDebugMode] = useState<boolean>(true); // Default ON to preserve current +/- controls
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -148,19 +149,46 @@ export function SessionLiveScreen({ route, navigation }: Props) {
           return (
             <View key={key} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 4 }}>
               <Text style={{ flex: 1 }}>{memberDisplayName(memberId)}</Text>
-              <TouchableOpacity
-                style={{ backgroundColor: '#e74c3c', padding: 8, borderRadius: 6, marginRight: 8 }}
-                onPress={() => handleNegativeCommit(memberId, penalty.id)}
-              >
-                <Text style={{ color: '#fff' }}>-</Text>
-              </TouchableOpacity>
-              <Text style={{ width: 40, textAlign: 'center' }}>{count}</Text>
-              <TouchableOpacity
-                style={{ backgroundColor: '#27ae60', padding: 8, borderRadius: 6, marginLeft: 8 }}
-                onPress={() => handleCommit(memberId, penalty.id)}
-              >
-                <Text style={{ color: '#fff' }}>+</Text>
-              </TouchableOpacity>
+              {debugMode ? (
+                <>
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#e74c3c', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, marginRight: 8 }}
+                    onPress={() => handleNegativeCommit(memberId, penalty.id)}
+                    accessibilityLabel="Decrease commit"
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>-</Text>
+                  </TouchableOpacity>
+                  <Text style={{ width: 44, textAlign: 'center' }}>{count}</Text>
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#27ae60', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 6, marginLeft: 8 }}
+                    onPress={() => handleCommit(memberId, penalty.id)}
+                    accessibilityLabel="Increase commit"
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>+</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => handleCommit(memberId, penalty.id)}
+                  onLongPress={() => handleNegativeCommit(memberId, penalty.id)}
+                  delayLongPress={300}
+                  style={{
+                    minWidth: 80,
+                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    borderWidth: 1,
+                    borderColor: '#E2E8F0',
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 8,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  accessibilityLabel="Commit cell (tap to add, long-press to subtract)"
+                >
+                  <Text style={{ fontWeight: '700' }}>{count}</Text>
+                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>tap +1 • long-press -1</Text>
+                </TouchableOpacity>
+              )}
             </View>
           );
         })}
@@ -221,12 +249,33 @@ export function SessionLiveScreen({ route, navigation }: Props) {
         </View>
       </View>
 
-      <TouchableOpacity
-        style={{ marginTop: 16, backgroundColor: '#e67e22', paddingVertical: 12, borderRadius: 10 }}
-        onPress={() => (navigation as any).navigate('SessionEndSummary', { sessionId, clubId })}
-      >
-        <Text style={{ color: '#fff', textAlign: 'center', fontWeight: '700' }}>End Session</Text>
-      </TouchableOpacity>
+      {/* Footer Controls */}
+      <View style={{ marginTop: 16 }}>
+        <TouchableOpacity
+          onPress={() => setDebugMode((v) => !v)}
+          style={{
+            paddingVertical: 12,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: debugMode ? '#10B981' : '#94A3B8',
+            backgroundColor: debugMode ? '#D1FAE5' : '#F1F5F9',
+            marginBottom: 10,
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Toggle Debug Mode"
+        >
+          <Text style={{ textAlign: 'center', fontWeight: '700', color: debugMode ? '#065F46' : '#334155' }}>
+            Debug Mode: {debugMode ? 'ON' : 'OFF'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={{ backgroundColor: '#e67e22', paddingVertical: 12, borderRadius: 10 }}
+          onPress={() => (navigation as any).navigate('SessionEndSummary', { sessionId, clubId })}
+        >
+          <Text style={{ color: '#fff', textAlign: 'center', fontWeight: '700' }}>End Session</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }

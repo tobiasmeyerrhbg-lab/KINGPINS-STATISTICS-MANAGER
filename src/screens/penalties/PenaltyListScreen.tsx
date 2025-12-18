@@ -22,7 +22,7 @@ import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/nativ
 import { Penalty, getPenaltiesByClub } from '../../services/penaltyService';
 
 export default function PenaltyListScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const route = useRoute();
   const { clubId } = route.params as { clubId: string };
 
@@ -48,11 +48,11 @@ export default function PenaltyListScreen() {
   };
 
   const handlePenaltyPress = (penalty: Penalty) => {
-    navigation.navigate('PenaltyEdit' as never, { penaltyId: penalty.id } as never);
+    (navigation as any).navigate('PenaltyEdit', { penaltyId: penalty.id });
   };
 
   const handleCreatePress = () => {
-    navigation.navigate('PenaltyCreate' as never, { clubId } as never);
+    (navigation as any).navigate('PenaltyCreate', { clubId });
   };
 
   const getAffectColor = (affect: string) => {

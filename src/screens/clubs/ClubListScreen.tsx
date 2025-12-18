@@ -20,9 +20,10 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Club, getAllClubs } from '../../services/clubService';
+import ClubLogo from '../../components/ClubLogo';
 
 export default function ClubListScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const [clubs, setClubs] = useState<Club[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -43,11 +44,11 @@ export default function ClubListScreen() {
   };
 
   const handleClubPress = (club: Club) => {
-    navigation.navigate('ClubEdit' as never, { clubId: club.id } as never);
+    (navigation as any).navigate('ClubEdit', { clubId: club.id });
   };
 
   const handleCreatePress = () => {
-    navigation.navigate('ClubCreate' as never);
+    (navigation as any).navigate('ClubCreate');
   };
 
   const renderClubItem = ({ item }: { item: Club }) => (
@@ -55,15 +56,7 @@ export default function ClubListScreen() {
       style={styles.clubItem}
       onPress={() => handleClubPress(item)}
     >
-      {item.logoUri ? (
-        <Image source={{ uri: item.logoUri }} style={styles.logo} />
-      ) : (
-        <View style={styles.logoPlaceholder}>
-          <Text style={styles.logoPlaceholderText}>
-            {item.name.charAt(0).toUpperCase()}
-          </Text>
-        </View>
-      )}
+      <ClubLogo logoUri={item.logoUri} style={styles.logo} resizeMode="cover" />
       <View style={styles.clubInfo}>
         <Text style={styles.clubName}>{item.name}</Text>
         <Text style={styles.clubDate}>

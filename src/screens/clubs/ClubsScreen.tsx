@@ -18,7 +18,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Text,
-  Image,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -26,6 +25,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Club, getAllClubs, createClub } from '../../services/clubService';
 import { getMembersByClub } from '../../services/memberService';
 import { db } from '../../database/db';
+import ClubLogo from '../../components/ClubLogo';
 
 interface ClubWithCount extends Club {
   memberCount: number;
@@ -165,13 +165,7 @@ export default function ClubsScreen() {
       onPress={() => handleClubPress(item)}
     >
       <View style={styles.clubLogoContainer}>
-        {item.logoUri ? (
-          <Image source={{ uri: item.logoUri }} style={styles.clubLogo} />
-        ) : (
-          <View style={styles.clubLogoPlaceholder}>
-            <Text style={styles.clubLogoText}>{item.name.charAt(0).toUpperCase()}</Text>
-          </View>
-        )}
+        <ClubLogo logoUri={item.logoUri} style={styles.clubLogo} resizeMode="cover" />
       </View>
       
       <View style={styles.clubInfo}>

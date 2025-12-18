@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
@@ -12,6 +11,7 @@ import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/nativ
 import { Club, getClub } from '../../services/clubService';
 import { getMembersByClub } from '../../services/memberService';
 import { getPenaltiesByClub } from '../../services/penaltyService';
+import ClubLogo from '../../components/ClubLogo';
 // UPDATED: Removed getSessionsByClub import - sessions now managed in SessionListScreen
 
 interface RouteParams {
@@ -112,13 +112,7 @@ export default function ClubDetailScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.heroCard}>
         <View style={styles.heroHeader}>
-          {club.logoUri ? (
-            <Image source={{ uri: club.logoUri }} style={styles.logo} resizeMode="contain" />
-          ) : (
-            <View style={styles.logoPlaceholder}>
-              <Text style={styles.logoText}>{displayName.charAt(0).toUpperCase()}</Text>
-            </View>
-          )}
+          <ClubLogo logoUri={club.logoUri} style={styles.logo} resizeMode="cover" />
           <View style={styles.heroInfo}>
             <Text style={styles.clubName}>{displayName}</Text>
             <Text style={styles.metaText}>

@@ -252,6 +252,258 @@ Assign icons:
 
 ---
 
+## 4.b Statistics Tab 4 — Global Exports
+
+### Overview
+Tab 4 provides comprehensive export functionality for club statistics and system logs. Users can export all-time penalty analysis, winner rankings, member statistics, and complete system logs for external analysis and reporting.
+
+### Layout Structure
+
+**Header Section:**
+- Title: "📊 Global Exports"
+- Subtitle: "Download club statistics and system logs"
+
+**Section 1: All-Time Statistics (3 Primary Export Options)**
+- Card-based layout with white background, subtle shadow, 8px border radius
+- Each card is a TouchableOpacity button with press feedback
+- Cards display in vertical stack, 12px spacing between cards
+- Button styling: primary blue (#007AFF), 14px font, 16px padding
+
+**Export Options:**
+
+1. **📥 Export All Time Penalty Analysis**
+   - **Purpose:** Export comprehensive penalty commit summary across all sessions
+   - **Data Included:**
+     - Penalty name
+     - Total commits (sum of all positive and negative commits)
+     - Grand total line showing overall commit count
+   - **File Format:** CSV (Comma-Separated Values)
+   - **Filename:** `penalty-analysis-{clubId}-{YYYY-MM-DD}.csv`
+   - **SQL Query (Data Source):**
+     ```sql
+     SELECT DISTINCT l.penaltyId, p.name as penaltyName, COUNT(*) as totalCommits
+     FROM SessionLog l
+     JOIN Penalty p ON l.penaltyId = p.id
+     WHERE l.clubId = ? AND (l.system = 8 OR l.system = 9)
+     GROUP BY l.penaltyId, p.name
+     ORDER BY p.name ASC
+     ```
+   - **CSV Columns:** Penalty Name | Total Commits
+   - **Example Output:**
+     ```
+     All-Time Penalty Analysis
+     Penalty Name,Total Commits
+     Forgetting Wallet,127
+     Late Arrival,89
+     Buying Round,154
+     Grand Total,370
+     ```
+
+2. **🏆 Export Top Winners by Penalty**
+   - **Purpose:** Identify top commit winners (most commits) for each penalty
+   - **Data Included:**
+     - Penalty name
+     - Rank (1, 2, 3... per penalty)
+     - Member name
+     - Commit count for that penalty
+   - **File Format:** CSV
+   - **Filename:** `top-winners-{clubId}-{YYYY-MM-DD}.csv`
+   - **SQL Query (Data Source):**
+     ```sql
+     SELECT p.name as penaltyName, m.name as memberName, COUNT(*) as commits
+     FROM SessionLog l
+     JOIN Penalty p ON l.penaltyId = p.id
+     JOIN Member m ON l.memberId = m.id
+     WHERE l.clubId = ? AND (l.system = 8 OR l.system = 9)
+     GROUP BY l.penaltyId, l.memberId, p.name, m.name
+     ORDER BY p.name ASC, commits DESC
+     ```
+   - **CSV Columns:** Penalty Name | Rank | Member Name | Commits
+   - **Example Output:**
+     ```
+     Top Winners by Penalty
+     Penalty Name,Rank,Member Name,Commits
+     Forgetting Wallet,1,John Smith,28
+     Forgetting Wallet,2,Emma Johnson,21
+     Late Arrival,1,Michael Brown,15
+     Late Arrival,2,Sarah Lee,12
+     ```
+
+3. **👥 Export Member Statistics**
+   - **Purpose:** Export comprehensive per-member statistics across all sessions
+   - **Data Included:**
+     - Member name
+     - Total commits (all penalty commits)
+     - Sessions attended
+     - Total amount owed/credited
+   - **File Format:** CSV
+   - **Filename:** `member-statistics-{clubId}-{YYYY-MM-DD}.csv`
+   - **SQL Query (Data Source):**
+     ```sql
+     SELECT m.id, m.name, 
+            COUNT(DISTINCT CASE WHEN (l.system = 8 OR l.system = 9) THEN l.id END) as totalCommits,
+            COUNT(DISTINCT l.sessionId) as sessionsAttended,
+            SUM(CASE WHEN l.system = 11 THEN l.amountTotal ELSE 0 END) as totalAmount
+     FROM Member m
+     LEFT JOIN SessionLog l ON m.id = l.memberId AND l.clubId = ?
+     WHERE m.clubId = ?
+     GROUP BY m.id, m.name
+     ORDER BY m.name ASC
+     ```
+   - **CSV Columns:** Member Name | Total Commits | Sessions Attended | Total Amount
+   - **Example Output:**
+     ```
+     Member Statistics
+     Member Name,Total Commits,Sessions Attended,Total Amount
+     John Smith,45,12,234.50
+     Emma Johnson,38,11,198.75
+     Michael Brown,52,13,267.25
+     Sarah Lee,31,10,156.00
+     ```
+
+**Section 2: All System Logs (2 Secondary Export Options)**
+- Card-based layout, same styling as Section 1
+- Includes detailed logs of all system events
+
+**Export Options:**
+
+1. **📥 Export All Logs (CSV & JSON)**
+   - **Purpose:** Export complete system log history for detailed analysis
+   - **Data Included:**
+     - All system log entries (systems 8, 9, 11, 12, 15)
+     - Session ID, Member ID, Penalty ID, Amount, Timestamp
+     - Log system type, actor, action details
+   - **File Formats:** Both CSV and JSON generated
+   - **Filenames:** 
+     - `all-logs-{clubId}-{YYYY-MM-DD}.csv`
+     - `all-logs-{clubId}-{YYYY-MM-DD}.json`
+   - **Coverage:** Every session, every member, every system log without filtering
+   - **Data Guarantee:** No logs are excluded or filtered beyond clubId
+
+2. **📤 Share All Logs**
+   - **Purpose:** Share exported logs via system intent (email, messaging, cloud storage, etc.)
+   - **Behavior:** Opens system share dialog after generating exports
+   - **File Types Shared:** Both CSV and JSON files
+   - **Supported Targets:** Email, messaging apps, cloud storage, file managers
+
+### Information Section
+Below the export buttons, a summary box provides:
+- Export coverage explanation (all-time, all members, all sessions)
+- Supported formats (CSV for spreadsheets, JSON for data import)
+- File naming convention (includes clubId and date)
+- Storage location note (files saved locally, accessible in file manager)
+- Timestamp clarification (each export includes current date in filename)
+
+### User Flow
+
+1. **User opens Statistics Tab 4 (Exports)**
+2. **User selects export option:**
+   - Loading indicator displays (ActivityIndicator, centered)
+   - System queries database and generates CSV file
+3. **Export completes:**
+   - Success alert displays with file URI
+   - User can copy URI or close alert
+4. **For "Share All Logs":**
+   - After export, system intent dialog opens
+   - User selects target app (email, messages, cloud storage, etc.)
+   - Files are sent to selected app
+
+### Technical Implementation
+
+**File:** `src/screens/statistics/GlobalExportsTab.tsx`
+
+**Key Functions:**
+```typescript
+// Handler for Penalty Analysis export
+handleExportPenaltyAnalysis = async () => {
+  setExporting(true);
+  try {
+    const uri = await exportPenaltyAnalysis(clubId);
+    Alert.alert('Export Successful', `File saved: ${uri}`);
+  } catch (error) {
+    Alert.alert('Export Failed', error.message);
+  } finally {
+    setExporting(false);
+  }
+};
+
+// Handler for Top Winners export
+handleExportTopWinners = async () => {
+  setExporting(true);
+  try {
+    const uri = await exportTopWinners(clubId);
+    Alert.alert('Export Successful', `File saved: ${uri}`);
+  } catch (error) {
+    Alert.alert('Export Failed', error.message);
+  } finally {
+    setExporting(false);
+  }
+};
+
+// Handler for Member Statistics export
+handleExportMemberStatistics = async () => {
+  setExporting(true);
+  try {
+    const uri = await exportMemberStatistics(clubId);
+    Alert.alert('Export Successful', `File saved: ${uri}`);
+  } catch (error) {
+    Alert.alert('Export Failed', error.message);
+  } finally {
+    setExporting(false);
+  }
+};
+```
+
+**Service:** `src/services/globalExportsService.ts`
+
+**Key Functions:**
+- `exportPenaltyAnalysis(clubId: string): Promise<string>` — generates penalty analysis CSV
+- `exportTopWinners(clubId: string): Promise<string>` — generates top winners ranking CSV
+- `exportMemberStatistics(clubId: string): Promise<string>` — generates member statistics CSV
+- `exportAllLogs(clubId: string): Promise<void>` — generates CSV and JSON log exports
+- `exportAndShareAllLogs(clubId: string): Promise<void>` — shares exports via system intent
+
+**File Storage:**
+- Base directory: `{FileSystem.documentDirectory}PenaltyPro/Exports/`
+- Files automatically organized in timestamped subdirectories
+- Accessible via file manager or sharing dialogs
+
+### Data Accuracy & Completeness
+
+**Penalty Analysis:**
+- Uses raw SQL query without filtering (except clubId)
+- Counts both positive (system=8) and negative (system=9) commits
+- No session or time range restrictions
+- Includes all members and all penalties
+
+**Top Winners by Penalty:**
+- Ranks members per penalty by commit count (descending)
+- No minimum commit threshold
+- No time range restrictions
+- All members who have commits included
+
+**Member Statistics:**
+- Counts distinct sessions attended
+- Sums total commits across all penalties
+- Calculates total amount from settlement logs (system=11)
+- All active members included (even if zero commits)
+
+**All Logs:**
+- Exports every log entry in database (no WHERE clause filtering)
+- Includes session logs, member logs, penalty logs, settlement logs
+- No pagination or limiting
+- Complete historical record
+
+### User Experience Notes
+
+- **Loading State:** While exporting, UI shows loading spinner and disables further export attempts
+- **Error Handling:** Network failures, permission errors, and disk space issues display user-friendly alert messages
+- **File Path Display:** Success alert shows full file URI for user verification
+- **No Data Loss:** Exports write to device storage; files persist even after app closes
+- **Privacy:** Exports contain only club-specific data; users must manually manage file distribution
+
+---
+
 ## 5. Fullscreen Graphs — Unified Template
 
 **Layout stack:** Navigation Header → (8–12px spacer) → Graph → X-Axis (reserved 52–56px) → Legend (0–4px gap)
@@ -398,6 +650,8 @@ Every AI agent or developer must update this file whenever new UI elements are c
 
 Purpose:
 - Enable users to attach images via camera or gallery for Clubs (Logo) and Members (Photo).
+
+
 - Ensure selected images appear everywhere a placeholder/dummy was previously shown.
 
 User Entry Points:
@@ -438,6 +692,115 @@ if (uri) setPhotoUri(uri);
 Result:
 - “Pick Logo/Photo” now offers camera or gallery.
 - Images persist and render wherever `logoUri`/`photoUri` are used throughout the app.
+---
+
+## 9.c Active Session UI — Debug Mode Toggle (2025-12-17)
+
+Overview:
+- Adds a footer button to switch between classic +/- controls (Debug Mode ON) and cell-based controls (Debug Mode OFF) during an active session. All logging and calculations remain unchanged.
+
+Control Mode Toggle:
+- Location: Session Live footer, above the “End Session” button.
+- Label: "Debug Mode: ON" (green) or "Debug Mode: OFF" (muted).
+- Default: ON (preserves existing +/- buttons).
+
+Behaviors:
+- Debug Mode ON (classic):
+  - Per member–penalty row shows three controls: [−] [count] [+].
+  - Tap [+] → positive commit; Tap [−] → negative commit.
+- Debug Mode OFF (cell-based):
+  - A single count cell replaces the +/- buttons.
+  - Tap the cell → increase counter by 1 (positive commit).
+  - Long-press the cell → decrease counter by 1 (negative commit).
+  - Hint under the count: "tap +1 • long-press -1".
+
+Unchanged Logic (strict):
+- Logging: positive commits → system=8; negative commits → system=9.
+- Totals: `totalAmounts` update rules for SELF/OTHER/BOTH/NONE remain exactly the same.
+- Counters: derived from logs (rebuilt on refresh), not persisted directly.
+- Multiplier: changes logged with system=5; current multiplier affects commit application as before.
+- UI Refresh: totals, counters, commit buttons/cells, and summary header update on each action.
+
+UX Notes:
+- The cell touch target is ≥44px height; long-press delay ~300ms.
+- Interactions do not interfere with scroll; long-press reliably triggers decrement.
+- Visual layout, headers, and summary remain as previously designed.
+- In the grid layout (`SessionLiveScreenNew`), Debug Mode OFF uses a larger counter font inside each cell while preserving the same row height as Debug Mode ON for perfect alignment.
+
+Files:
+- Updated: `src/screens/sessions/SessionLiveScreen.tsx` (adds `debugMode` state, footer toggle button, and conditional rendering for cell-based control).
+- Updated: `src/screens/sessions/SessionLiveScreenNew.tsx` (grid layout). Toggle placed inside `styles.actionsBar`; when OFF, each member–penalty cell becomes a single touch target with tap = +1 and long-press = -1. Both modes call the same `handleCommit(memberId, penaltyId, direction)`.
+
+QA Scenarios:
+- Validations with multiplier 1 and >1; positive and negative commits; SELF/OTHER/BOTH/NONE penalties; verify `totalAmounts` and session summary update identically in both modes.
+
+---
+
+## 9.d Active Session UI — Details Mode Toggle (2025-12-17)
+
+Overview:
+- Adds an optional "Details" button to the session footer (only visible when Debug Mode is OFF) to toggle between simple commit count display and detailed multiplier breakdown display. Provides flexible visual clutter control without changing logging or calculations.
+
+Details Toggle:
+- Location: Session Live footer, next to "Debug Mode" button (only shown when Debug Mode OFF).
+- Label: "Details: ON" (light blue) or "Details: OFF" (muted).
+- Default: OFF (simple count display for clarity).
+- Visibility: Only appears when Debug Mode is OFF (irrelevant when using +/- buttons).
+
+Display Formats:
+- Details OFF: Simple count display
+  - Example: `5` (shows total commit count only)
+  - Font: 30px bold, single line, centered in cell
+  - Hint text below: "tap +1 • long-press -1"
+- Details ON: Count with multiplier breakdown
+  - Example: `5 (1 × 2x, 2 × 4x)` (total with multiplier distribution)
+  - Font: 14px, up to 3 lines, centered, text wrapping enabled
+  - Breakdown format: only multipliers >1 shown; "COUNT × MULTIPLIERx" separated by ", "
+  - 1× commits are always aggregated into the total count (never shown separately)
+
+Multiplier Breakdown Logic:
+- Aggregates all commits by multiplier value
+- Filters to show only multipliers > 1
+- Format: `total (breakdown)` where breakdown is comma-separated "count × Mx" entries
+- Dynamic for any number of active multipliers (e.g., "1 × 2x, 1 × 3x, 2 × 4x")
+- If no multipliers > 1 applied, displays only total count (e.g., `5` instead of `5 ()`)
+
+Unchanged Logic (strict):
+- Logging: not affected; all commits use system=8 (positive) or system=9 (negative)
+- Totals: `totalAmounts` calculations unchanged
+- Multiplier application: current multiplier still affects commit value, not display
+- Session summary: unaffected; shows only total multiplied amounts
+
+Cell Rendering:
+- Tap and long-press behavior unchanged regardless of Details mode
+- Cell height dynamically adjusts for multi-line breakdown text (40–72px range)
+- All member–penalty cells update simultaneously when Details toggle is changed
+
+Implementation Files:
+- Updated: `src/screens/sessions/SessionLiveScreenNew.tsx`
+  - Added `detailsMode` state (default false)
+  - Added "Details" button in footer (conditional, only when `!debugMode`)
+  - Updated `formatCommitDisplay()` callback to conditionally show breakdown:
+    - Returns `String(total)` when Details OFF or Debug ON
+    - Returns `${total} (${breakdown.join(', ')})` when Details ON and Debug OFF
+    - Breakdown only includes multipliers > 1
+  - Updated cell text rendering: 22px font for Details OFF, 12px font for Details ON; `numberOfLines` adjusts from 1 to 3
+  - Added styles: `offCommitCountDetailed` (12px), `detailsToggleButton`, `detailsOn`, `detailsOff`, `detailsToggleText`, `detailsOnText`, `detailsOffText`
+
+Visual Scale Update (2025-12-17):
+- Commit counters (Details OFF): 30px font, lineHeight 34, paddingVertical 12.
+- Commit counters (Details ON): 14px font, lineHeight 18, wraps up to 3 lines.
+- Penalty headers: Name 15px (lineHeight 18), Amount 11px (lineHeight 16).
+- Header spacing: `penaltyHeaderCell` paddingVertical 12; `penaltyNameContainer` minHeight 34; `penaltyAmountContainer` minHeight 22.
+
+QA Scenarios:
+- Toggle Details ON/OFF during active session; verify multiplier breakdown displays correctly
+- Test with various multiplier combinations (2x, 3x, 4x, 5x) and ensure only >1 shown
+- Verify 1× commits always aggregate into total count (no "1 × 1x" shown)
+- Confirm text wrapping and cell height adjustment works for long breakdowns
+- Test when no multipliers >1 are active (should show only simple count even with Details ON)
+- Verify Toggle only appears when Debug Mode OFF (hidden when Debug ON)
+
 
 
 ## 1. Core Principles

@@ -83,9 +83,8 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
   const [newMemberName, setNewMemberName] = useState('');
   const [showEndModals, setShowEndModals] = useState(false);
   const [tick, setTick] = useState(0);
-  
-  // End session flow state
-  const [showEndConfirmModal, setShowEndConfirmModal] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
+   const [detailsMode, setDetailsMode] = useState(false);
   const [isFinalizingSession, setIsFinalizingSession] = useState(false);
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [showRewardModal, setShowRewardModal] = useState(false);
@@ -295,10 +294,16 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
 
   /**
    * Format commit display with multiplier grouping using shared formatter
+   * Optionally show breakdown based on detailsMode
    */
   const formatCommitDisplay = useCallback(
     (memberId: string, penaltyId: string): string => {
       const total = commitCounts[memberId]?.[penaltyId] || 0;
+
+      // If Details Mode OFF or Debug Mode ON, show only total count
+      if (!detailsMode || debugMode) {
+        return String(total);
+      }
 
       // Group by multiplier from logs
       const byMultiplier: Record<number, number> = {};
@@ -315,9 +320,24 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
         }
       }
 
-      return formatCommitCountFromMap(total, byMultiplier);
+      // Format with breakdown: only show multipliers > 1
+      const breakdown: string[] = [];
+      for (const mult of Object.keys(byMultiplier)
+        .map(Number)
+        .sort((a, b) => a - b)) {
+        if (mult > 1) {
+          const count = byMultiplier[mult];
+          breakdown.push(`${count} × ${mult}x`);
+        }
+      }
+
+      if (breakdown.length === 0) {
+        return String(total);
+      }
+
+      return `${total} (${breakdown.join(', ')})`;
     },
-    [commitCounts, logs]
+    [commitCounts, logs, detailsMode, debugMode]
   );
 
   const formatPenaltyAmount = useCallback((penalty: Penalty): string => {
@@ -615,14 +635,6 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
         <View style={styles.topBarCenter}>
           <Text style={styles.timerText}>{elapsedTime}</Text>
         </View>
-
-        {/* UPDATED: Multiplier Button - fixed width to prevent overlap with system info */}
-        <TouchableOpacity
-          style={styles.multiplierButton}
-          onPress={() => setShowMultiplierModal(true)}
-        >
-          <Text style={styles.multiplierButtonText}>{currentMultiplier}×</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Grid Table - Takes Maximum Space */}
@@ -657,7 +669,11 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
                     style={[styles.penaltyHeaderCell, { width: penaltyColumnWidth, minWidth: penaltyColumnWidth }]}
                   >
                     <View style={styles.penaltyNameContainer}>
-                      <Text style={styles.penaltyHeaderText} numberOfLines={2}>
+                      <Text 
+                        style={styles.penaltyHeaderText} 
+                        numberOfLines={2}
+                        ellipsizeMode="clip"
+                        >
                         {penalty.name}
                       </Text>
                     </View>
@@ -691,7 +707,14 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
                     }
                     style={styles.avatar}
                   />
-                  <Text style={styles.memberNameText}>{member.name}</Text>
+                  <Text
+                    style={styles.memberNameText}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                    >
+                    {member.name}
+                  </Text>
                 </View>
                 <View style={styles.penaltyCellsRow}>
                   {penalties.map(penalty => {
@@ -701,21 +724,71 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
                         key={penalty.id}
                         style={[styles.commitCell, { width: penaltyColumnWidth, minWidth: penaltyColumnWidth }]}
                       >
-                        <TouchableOpacity
-                          style={[styles.commitButton, { marginLeft: 2, marginRight: 2 }]}
-                          onPress={() => handleCommit(member.id, penalty.id, -1)}
-                          disabled={isProcessing.current}
-                        >
-                          <Text style={styles.buttonSymbol}>−</Text>
-                        </TouchableOpacity>
-                        <Text style={styles.commitCount}>{displayText}</Text>
-                        <TouchableOpacity
-                          style={[styles.commitButton, { marginLeft: 2, marginRight: 2 }]}
-                          onPress={() => handleCommit(member.id, penalty.id, 1)}
-                          disabled={isProcessing.current}
-                        >
-                          <Text style={styles.buttonSymbol}>+</Text>
-                        </TouchableOpacity>
+                        {debugMode ? (
+                          <>
+                            <TouchableOpacity
+                              style={[styles.commitButton, { marginLeft: 2, marginRight: 2 }]}
+                              onPress={() => handleCommit(member.id, penalty.id, -1)}
+                              disabled={isProcessing.current}
+                              accessibilityLabel="Decrease commit"
+                            >
+                              <Text style={styles.buttonSymbol}>−</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.commitCount}>{displayText}</Text>
+                            <TouchableOpacity
+                              style={[styles.commitButton, { marginLeft: 2, marginRight: 2 }]}
+                              onPress={() => handleCommit(member.id, penalty.id, 1)}
+                              disabled={isProcessing.current}
+                              accessibilityLabel="Increase commit"
+                            >
+                              <Text style={styles.buttonSymbol}>+</Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                            <TouchableOpacity
+                              onPress={() => handleCommit(member.id, penalty.id, 1)}
+                              onLongPress={() => handleCommit(member.id, penalty.id, -1)}
+                              delayLongPress={300}
+                              disabled={isProcessing.current}
+                              style={styles.commitCellTouch}
+                              accessibilityLabel="Commit cell"
+                            >
+                              {detailsMode ? (
+                                <View style={styles.detailsStack}>
+                                  {/* Total count (dominant) */}
+                                  <Text style={styles.detailsTotalCount}>
+                                    {(commitCounts[member.id]?.[penalty.id] || 0)}
+                                  </Text>
+                                  {/* Breakdown by multiplier (>1), ascending */}
+                                  {(() => {
+                                    const byMultiplier: Record<number, number> = {};
+                                    for (const log of logs) {
+                                      if ((log.system === 8 || log.system === 9) && log.memberId === member.id && log.penaltyId === penalty.id && log.multiplier) {
+                                        const mult = log.multiplier;
+                                        const delta = log.system === 8 ? 1 : -1;
+                                        byMultiplier[mult] = (byMultiplier[mult] || 0) + delta;
+                                      }
+                                    }
+                                    const rows = Object.keys(byMultiplier)
+                                      .map(Number)
+                                      .filter(m => m > 1 && byMultiplier[m] !== 0)
+                                      .sort((a, b) => a - b)
+                                      .map(m => ({ m, c: byMultiplier[m] }));
+                                    return rows.map(r => (
+                                      <Text key={`m-${r.m}`} style={styles.detailsMultiplierRow}>
+                                        {`${r.m}×  (${r.c})`}
+                                      </Text>
+                                    ));
+                                  })()}
+                                </View>
+                              ) : (
+                                <Text style={styles.offCommitCount} numberOfLines={1}>
+                                  {displayText}
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+
+                        )}
                       </View>
                     );
                   })}
@@ -738,18 +811,55 @@ export function SessionLiveScreenNew({ route, navigation }: Props) {
         >
           <Text style={styles.addMembersButtonText}>+ Members</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.endSessionButton,
-            session?.locked && styles.endSessionButtonDisabled
-          ]}
-          onPress={handleEndSession}
-          disabled={isProcessing.current || session?.locked}
-        >
-          <Text style={styles.endSessionButtonText}>
-            {session?.locked ? 'Locked' : 'End Session'}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.footerRightButtons}>
+          <TouchableOpacity
+            style={styles.multiplierButtonFooter}
+            onPress={() => setShowMultiplierModal(true)}
+            disabled={isProcessing.current}
+          >
+            <Text style={styles.multiplierButtonFooterText}>{currentMultiplier}×</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.debugToggleButton,
+              debugMode ? styles.debugOn : styles.debugOff,
+            ]}
+            onPress={() => setDebugMode(d => !d)}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle Debug Mode"
+          >
+            <Text style={[styles.debugToggleText, debugMode ? styles.debugOnText : styles.debugOffText]}>
+              Debug Mode {debugMode ? 'ON' : 'OFF'}
+            </Text>
+          </TouchableOpacity>
+          {!debugMode && (
+            <TouchableOpacity
+              style={[
+                styles.detailsToggleButton,
+                detailsMode ? styles.detailsOn : styles.detailsOff,
+              ]}
+              onPress={() => setDetailsMode(d => !d)}
+              accessibilityRole="button"
+              accessibilityLabel="Toggle Details Mode"
+            >
+              <Text style={[styles.detailsToggleText, detailsMode ? styles.detailsOnText : styles.detailsOffText]}>
+                Details {detailsMode ? 'ON' : 'OFF'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[
+              styles.endSessionButton,
+              session?.locked && styles.endSessionButtonDisabled
+            ]}
+            onPress={handleEndSession}
+            disabled={isProcessing.current || session?.locked}
+          >
+            <Text style={styles.endSessionButtonText}>
+              {session?.locked ? 'Locked' : 'End Session'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Add Members Modal */}
@@ -925,12 +1035,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sessionTitle: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
     color: '#000',
   },
   timerText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: '#007AFF',
   },
@@ -961,8 +1071,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
     marginRight: 8,
-    minWidth: 44,
-    height: 44,
+    minWidth: 50,
+    height: 50,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1006,8 +1116,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   penaltyHeaderCell: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
     justifyContent: 'center',
     alignItems: 'stretch',
     borderRightWidth: 1,
@@ -1016,36 +1126,40 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   penaltyNameContainer: {
-    minHeight: 24,
+    minHeight: 36,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 2,
   },
   headerText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#000000',
   },
   penaltyHeaderText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: '#000000',
     textAlign: 'center',
-    lineHeight: 13,
+    lineHeight: 18,
+    flexWrap: 'wrap',
+    writingDirection: 'ltr',
+    includeFontPadding: false,
   },
   penaltyAmountContainer: {
-    minHeight: 18,
+    minHeight: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   penaltyAmountText: {
-    fontSize: 9,
+    fontSize: 15,
     color: '#006200',
     textAlign: 'center',
     fontWeight: '500',
-    lineHeight: 12,
+    lineHeight: 16,
   },
   penaltyAmountPlaceholder: {
-    fontSize: 10,
+    fontSize: 15,
     color: 'transparent',
     textAlign: 'center',
     fontWeight: '500',
@@ -1068,10 +1182,11 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
   },
   memberNameText: {
-    fontSize: 13,
+    fontSize: 18,
     fontWeight: '500',
     color: '#000',
     flex: 1,
+    textAlign: 'left',
   },
   penaltyCellsRow: {
     flexDirection: 'row',
@@ -1106,7 +1221,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   commitCount: {
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: '600',
     color: '#000',
     minWidth: 20,
@@ -1114,6 +1229,83 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     flex: 0,
     flexShrink: 0,
+  },
+  commitCellTouch: {
+    width: '100%',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offCommitCount: {
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  offCommitCountDetailed: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  offCommitHint: {
+    marginTop: 2,
+    fontSize: 11,
+    lineHeight: 14,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  // Details ON stacked layout
+  detailsStack: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsTotalCount: {
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  detailsMultiplierRow: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  detailsToggleButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    minWidth: 110,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsOn: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#0EA5E9',
+  },
+  detailsOff: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#94A3B8',
+  },
+  detailsToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  detailsOnText: {
+    color: '#0C4A6E',
+  },
+  detailsOffText: {
+    color: '#334155',
   },
   totalCell: {
     paddingHorizontal: 10,
@@ -1126,8 +1318,8 @@ const styles = StyleSheet.create({
     minHeight: 72,
   },
   totalText: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: '#000000',
   },
 
@@ -1142,18 +1334,23 @@ const styles = StyleSheet.create({
   },
   endSessionButton: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     backgroundColor: '#007AFF',
-    borderRadius: 6,
+    borderRadius: 8,
+    minWidth: 120,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   endSessionButtonDisabled: {
     backgroundColor: '#999',
     opacity: 0.6,
   },
   endSessionButtonText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: '#fff',
+    textAlign: 'center',
   },
   errorContainer: {
     flex: 1,
@@ -1269,27 +1466,88 @@ const styles = StyleSheet.create({
   },
   actionsBar: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 6,
     backgroundColor: 'rgba(255,255,255,0.95)',
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
-    maxHeight: 48,
+    minHeight: 56,
+  },
+  footerRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   addMembersButton: {
     backgroundColor: '#28a745',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    minWidth: 100,
+    paddingVertical: 10,
+    borderRadius: 8,
+    minWidth: 110,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   addMembersButtonText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: '#fff',
+    textAlign: 'center',
+  },
+  multiplierButtonFooter: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#0051D5',
+    minWidth: 85,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  multiplierButtonFooterText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+    textAlign: 'center',
+  },
+  debugToggleButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    minWidth: 130,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  debugOn: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
+  },
+  debugOff: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#94A3B8',
+  },
+  debugToggleText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  debugOnText: {
+    color: '#065F46',
+  },
+  debugOffText: {
+    color: '#334155',
   },
   modalSubtitle: {
     fontSize: 13,
@@ -1357,8 +1615,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   avatar: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: 18,
     marginRight: 8,
   },
